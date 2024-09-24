@@ -230,19 +230,19 @@
                     message.set(checksum, 0)
                     message.set(encodedString, checksum.byteLength)
                     let cipherBytes = new Uint8Array(await window.crypto.subtle.encrypt({name: "AES-GCM", iv}, encryptionKey, message))
-                    let signature = new Uint8Array(await window.crypto.subtle.sign({name: "Ed25519"}, signingKey.privateKey, cipherBytes))
+                    // let signature = new Uint8Array(await window.crypto.subtle.sign({name: "Ed25519"}, signingKey.privateKey, cipherBytes))
                     // console.log(signature)
-                    let verification = await window.crypto.subtle.verify({name: "Ed25519"}, signingKey.publicKey, signature, cipherBytes)
+                    // let verification = await window.crypto.subtle.verify({name: "Ed25519"}, signingKey.publicKey, signature, cipherBytes)
                     // console.log(verification)
                     let messageObject = {
                         "data": bytes_to_b64(cipherBytes),
                         "iv": bytes_to_b64(iv),
-                        "signature": bytes_to_b64(signature),
+                        // "signature": bytes_to_b64(signature),
                         "iters": iters
                     }
                     console.log(messageObject)
-                    let decryptedString = await window.crypto.subtle.decrypt({name: "AES-GCM", iv}, encryptionKey, cipherBytes)
-                    let rawKey = await window.crypto.subtle.exportKey("raw", encryptionKey)
+                    // let decryptedString = await window.crypto.subtle.decrypt({name: "AES-GCM", iv}, encryptionKey, cipherBytes)
+                    // let rawKey = await window.crypto.subtle.exportKey("raw", encryptionKey)
                     // let HMACKey = await window.crypto.subtle.importKey("raw", rawKey, {name: "HMAC", hash: "SHA-512"}, true, ["sign"])
                     // console.log(new Uint8Array(await window.crypto.subtle.sign("HMAC", HMACKey, decryptedString.slice(32, decryptedString.byteLength-64))))
                     // console.log(bytes_to_hex(new Uint8Array(decryptedString.slice(decryptedString.byteLength-64)))+" "+bytes_to_hex(new Uint8Array(await window.crypto.subtle.digest("SHA-512", decryptedString.slice(32, decryptedString.byteLength-64)))))

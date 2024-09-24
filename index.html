@@ -98,6 +98,10 @@
             }
             return bytes
         }
+        async function globalDecryptFromJson(stringifiedMessageObject) {
+            let messageObject = JSON.parse(stringifiedMessageObject)
+            return await globalDecrypt(messageObject.iters, messageObject.data, messageObject.iv)
+        }
         async function globalDecrypt(iters, cipherString, iv) {
             let globalEncryptionKey = await getKeyFromIters(globalsharedKey, globalHMACKey, globalSalt_xor, iters)
             return new TextDecoder().decode(new Uint8Array(await window.crypto.subtle.decrypt(

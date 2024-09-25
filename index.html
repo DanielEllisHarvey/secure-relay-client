@@ -93,13 +93,11 @@
                 ]
                 // (111111 (xxxxxx00) + 110000 (000000xx))
                 bytes[byteEnum] = (values[0] << 2) + ((values[1] & 48) >> 4)
-                byteEnum++
                 // (001111 (xxxx0000) + 111100 (0000xxxx))
-                bytes[byteEnum] = ((values[1] & 15) << 4) + ((values[2] & 60) >> 2)
-                byteEnum++
+                bytes[byteEnum+1] = ((values[1] & 15) << 4) + ((values[2] & 60) >> 2)
                 // (000011 (xx000000) + 111111 (00xxxxxx)
-                bytes[byteEnum] = ((values[2] & 3) << 6) + (values[3])
-                byteEnum++
+                bytes[byteEnum+2] = ((values[2] & 3) << 6) + (values[3])
+                byteEnum+=3
             }
             return bytes
         }
@@ -128,15 +126,15 @@
                 document.getElementById("output").innerText = ""
                 let passphrase = prompt("Password:")
                 let uwkdf = await window.crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), { name: "PBKDF2" }, false, ["deriveKey"])
-                let passwd = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: mksalt(10,10,1900), iterations: 100, hash: "SHA-256" }, uwkdf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
+                let passwd = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: mksalt(10000, 9203, 8008135), iterations: 1000, hash: "SHA-256" }, uwkdf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
                 console.log(passwd)
                 if(localStorage.getItem("derivKey") == null){
                     // let signingKey = await generate_signing_key()
                     let derivKey = await generate_derivation_key()
                     let exportedDerivKey = new Uint8Array(await window.crypto.subtle.exportKey("pkcs8", derivKey.privateKey))
-                    console.log(exportedDerivKey)
-                    localStorage.setItem("derivKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: mksalt(100,100,9090) }, passwd, exportedDerivKey))))
-                    console.log(derivKey)
+                    let iv = window.crypto.getRandomValues(new Uint8Array(64))
+                    localStorage.setItem("derivIV", bytes_to_b64(iv))
+                    localStorage.setItem("derivKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, passwd, exportedDerivKey))))
                     localStorage.setItem("derivKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", derivKey.publicKey))))
                     // localStorage.setItem("signKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.wrapKey("pkcs8", signingKey.privateKey, passwd, { name: "AES-KW" }))))
                     // localStorage.setItem("signKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", signingKey.publicKey))))
@@ -164,11 +162,11 @@
                 // )
                 let derivKey = {}
                 // arrBuff = new Uint8Array(new ArrayBuffer(56))
-                let derivAlgoParams = 
+                // let derivAlgoParams = 
                 // if(localStorage.getItem("usingECDH") == "true") { algoParams = { name: "ECDH", namedCurve: "P-384" }; arrBuff = new Uint8Array(new ArrayBuffer(185))}
                 // else derivAlgoParams = { name: "X25519" }
-                arrBuff.set(new Uint8Array(await window.crypto.subtle.decrypt({name: "AES-GCM", iv: mksalt(100,100,9090)}, passwd, b64_to_bytes(localStorage.getItem("derivKey")))))
-                console.log("w1")
+                let iv = b64_to_bytes(localStorage.getItem("derivIV"))
+                arrBuff.set(new Uint8Array(await window.crypto.subtle.decrypt({name: "AES-GCM", iv}, passwd, b64_to_bytes(localStorage.getItem("derivKey")))))
                 console.log(arrBuff)
                 derivKey.privateKey = await window.crypto.subtle.importKey(
                     "pkcs8",
@@ -177,9 +175,8 @@
                     true,
                     ["deriveKey", "deriveBits"],
                 )
-                console.log("w2")
-                arrBuff = new Uint8Array(new ArrayBuffer(44))
-                if(localStorage["usingECDH"] == "true") { arrBuff = new Uint8Array(new ArrayBuffer(120)) }
+                arrBuff = new Uint8Array(new ArrayBuffer(120))
+                // if(localStorage["usingECDH"] == "true") { arrBuff = new Uint8Array(new ArrayBuffer(120)) }
                 arrBuff.set(b64_to_bytes(localStorage.getItem("derivKeyPub")))
                 derivKey.publicKey = await window.crypto.subtle.importKey(
                     "spki",
@@ -230,7 +227,7 @@
                     // let iv = await window.crypto.subtle.deriveBits({name: "PBKDF2", salt: mksalt(10, iters+(oldkdf[0]^oldkdf[2])), hash: "SHA-512", iterations: 1000}, keydf, 128)
                     let iters_gen = window.crypto.getRandomValues(new Uint32Array(4))
                     let iters = (iters_gen[0] + iters_gen[1])
-                    let iv = await window.crypto.getRandomValues(new Uint8Array(16))
+                    let iv = await window.crypto.getRandomValues(new Uint8Array(32))
                     let keydf = await new_pbkdf(sharedKey, iters, salt_xor, HMACKey)
                     let encryptionKey = await derive_new_key(keydf, iters, salt_xor)
                     // globalEncryptionKey = encryptionKey

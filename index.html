@@ -7,19 +7,24 @@
          * @returns X25519 cryptoKey
          */
         async function generate_derivation_key() {
-            return await window.crypto.subtle.generateKey({name: "X25519"}, true, ["deriveKey", "deriveBits"])
+            // return await window.crypto.subtle.generateKey({name: "X15519"}, true, ["deriveKey", "deriveBits"]).catch(async () => {
+            //     localStorage.setItem("usingECDH", true)
+            return await window.crypto.subtle.generateKey({name: "ECDH", namedCurve: "P-384"}, true, ["deriveKey", "deriveBits"])
+            // })
         }
 
         /**
          * Generate keypair for signature creation/verification
          * @returns Ed25519 cryptoKey
          */
-        async function generate_signing_key() {
-            return await window.crypto.subtle.generateKey({name: "Ed25519"}, true, ["sign", "verify"])
-        }
+        // async function generate_signing_key() {
+        //     return await window.crypto.subtle.generateKey({name: "Ed25519"}, true, ["sign", "verify"])
+        // }
 
         async function derive_symmetric_key(privateKey, publicKey) {
-            return await window.crypto.subtle.deriveKey({name: "X25519", public: publicKey}, privateKey, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
+            // let algoName = "X25519"
+            // if(localStorage.usingECDH == "true") algoName = "ECDH"
+            return await window.crypto.subtle.deriveKey({name: "ECDH", namedCurve: "P-384", public: publicKey}, privateKey, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
         }
         function mksalt(iters, shift, salt_xor) {
             let salt = new Uint8Array(32)
@@ -32,7 +37,7 @@
             return salt
         }
         async function derive_new_key(keydf, nonce, salt_xor) {
-            return await window.crypto.subtle.deriveKey({name: "PBKDF2", salt: mksalt(100, nonce, salt_xor), hash: "SHA-512", iterations: 10000}, keydf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
+            return await window.crypto.subtle.deriveKey({name: "PBKDF2", salt: mksalt(100, nonce, salt_xor), hash: "SHA-256", iterations: 10000}, keydf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
         }
         async function new_pbkdf(sharedKey, nonce, salt_xor, HMACKey) {
             let keydata = new Uint8Array(await window.crypto.subtle.exportKey("raw", sharedKey))
@@ -41,7 +46,7 @@
             let newHBK = keydata
             if(typeof HMACKey != "undefined") newHBK = new Uint8Array(await window.crypto.subtle.sign({name: "HMAC"}, HMACKey, keydata))
             // console.log(newHBK, keydata)
-            return await window.crypto.subtle.importKey("raw", newHBK, {name: "PBKDF2"}, true, ["deriveBits", "deriveKey"])
+            return await window.crypto.subtle.importKey("raw", newHBK, {name: "PBKDF2"}, false, ["deriveBits", "deriveKey"])
         }
 
         function bytes_to_hex(bytes) {
@@ -122,55 +127,64 @@
                 ignoreId++
                 document.getElementById("output").innerText = ""
                 let passphrase = prompt("Password:")
-                let uwkdf = await window.crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), { name: "PBKDF2" }, true, ["deriveKey"])
-                let passwd = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: mksalt(10,10,1900), iterations: 100, hash: "SHA-512" }, uwkdf, {name: "AES-KW", length: 256}, true, ["wrapKey", "unwrapKey"])
+                let uwkdf = await window.crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), { name: "PBKDF2" }, false, ["deriveKey"])
+                let passwd = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: mksalt(10,10,1900), iterations: 100, hash: "SHA-256" }, uwkdf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
+                console.log(passwd)
                 if(localStorage.getItem("derivKey") == null){
-                    let signingKey = await generate_signing_key()
+                    // let signingKey = await generate_signing_key()
                     let derivKey = await generate_derivation_key()
-                    localStorage.setItem("derivKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.wrapKey("pkcs8", derivKey.privateKey, passwd, { name: "AES-KW" }))))
+                    let exportedDerivKey = new Uint8Array(await window.crypto.subtle.exportKey("pkcs8", derivKey.privateKey))
+                    console.log(exportedDerivKey)
+                    localStorage.setItem("derivKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.encrypt({ name: "AES-GCM", iv: mksalt(100,100,9090) }, passwd, exportedDerivKey))))
+                    console.log(derivKey)
                     localStorage.setItem("derivKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", derivKey.publicKey))))
-                    localStorage.setItem("signKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.wrapKey("pkcs8", signingKey.privateKey, passwd, { name: "AES-KW" }))))
-                    localStorage.setItem("signKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", signingKey.publicKey))))
+                    // localStorage.setItem("signKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.wrapKey("pkcs8", signingKey.privateKey, passwd, { name: "AES-KW" }))))
+                    // localStorage.setItem("signKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", signingKey.publicKey))))
                 }
                 let signingKey = {}
-                let arrBuff = new Uint8Array(new ArrayBuffer(56))
-                arrBuff.set(b64_to_bytes(localStorage.getItem("signKey")))
-                signingKey.privateKey = await window.crypto.subtle.unwrapKey(
-                    "pkcs8",
-                    arrBuff,
-                    passwd,
-                    { "name": "AES-KW" },
-                    { "name": "Ed25519" },
-                    true,
-                    ["sign"],
-                )
-                arrBuff = new Uint8Array(new ArrayBuffer(44))
-                arrBuff.set(b64_to_bytes(localStorage.getItem("signKeyPub")))
-                signingKey.publicKey = await window.crypto.subtle.importKey(
-                    "spki",
-                    arrBuff,
-                    { "name": "Ed25519" },
-                    true,
-                    ["verify"]
-                )
+                let arrBuff = new Uint8Array(new ArrayBuffer(185))
+                // arrBuff.set(b64_to_bytes(localStorage.getItem("signKey")))
+                // signingKey.privateKey = await window.crypto.subtle.unwrapKey(
+                //     "pkcs8",
+                //     arrBuff,
+                //     passwd,
+                //     { "name": "AES-KW" },
+                //     { "name": "Ed25519" },
+                //     true,
+                //     ["sign"],
+                // )
+                // arrBuff = new Uint8Array(new ArrayBuffer(44))
+                // arrBuff.set(b64_to_bytes(localStorage.getItem("signKeyPub")))
+                // signingKey.publicKey = await window.crypto.subtle.importKey(
+                //     "spki",
+                //     arrBuff,
+                //     { "name": "Ed25519" },
+                //     true,
+                //     ["verify"]
+                // )
                 let derivKey = {}
-                arrBuff = new Uint8Array(new ArrayBuffer(56))
-                arrBuff.set(b64_to_bytes(localStorage.getItem("derivKey")))
-                derivKey.privateKey = await window.crypto.subtle.unwrapKey(
+                // arrBuff = new Uint8Array(new ArrayBuffer(56))
+                let derivAlgoParams = 
+                // if(localStorage.getItem("usingECDH") == "true") { algoParams = { name: "ECDH", namedCurve: "P-384" }; arrBuff = new Uint8Array(new ArrayBuffer(185))}
+                // else derivAlgoParams = { name: "X25519" }
+                arrBuff.set(new Uint8Array(await window.crypto.subtle.decrypt({name: "AES-GCM", iv: mksalt(100,100,9090)}, passwd, b64_to_bytes(localStorage.getItem("derivKey")))))
+                console.log("w1")
+                console.log(arrBuff)
+                derivKey.privateKey = await window.crypto.subtle.importKey(
                     "pkcs8",
                     arrBuff, // new ArrayBuffer(hex_to_bytes(localStorage.getItem("signKey"))),
-                    passwd,
-                    { "name": "AES-KW" },
-                    { "name": "X25519" },
+                    { name: "ECDH", namedCurve: "P-384" },
                     true,
                     ["deriveKey", "deriveBits"],
                 )
+                console.log("w2")
                 arrBuff = new Uint8Array(new ArrayBuffer(44))
+                if(localStorage["usingECDH"] == "true") { arrBuff = new Uint8Array(new ArrayBuffer(120)) }
                 arrBuff.set(b64_to_bytes(localStorage.getItem("derivKeyPub")))
                 derivKey.publicKey = await window.crypto.subtle.importKey(
                     "spki",
                     arrBuff,
-                    { "name": "X25519" },
+                    { name: "ECDH", namedCurve: "P-384" },
                     true,
                     []
                 )
@@ -179,7 +193,7 @@
                 key2.publicKey = await window.crypto.subtle.importKey(
                     "spki",
                     b64_to_bytes(document.getElementById("outsidePublicKey").value),
-                    { "name": "X25519" },
+                    { name: "ECDH", namedCurve: "P-384" },
                     true,
                     []
                 )

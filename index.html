@@ -111,7 +111,7 @@
                 { name: "AES-GCM", iv: b64_to_bytes(iv) },
                 globalEncryptionKey,
                 b64_to_bytes(cipherString)
-            )).slice(8))
+            )).slice(checksumSize))
         }
         let getKeyFromIters = () => {}
         let globalsharedKey = null
@@ -119,6 +119,7 @@
         let globaliv = null
         let globalHMACKey = null
         let ignoreId = 0
+        let checksumSize = 16
         window.onload = () => {
             document.getElementById("keys").innerText = localStorage.derivKeyPub
             document.getElementById("insertPubKey").addEventListener("click", async () => {
@@ -234,7 +235,8 @@
                     globaliv = iv
                     let stringToEncrypt = document.getElementById("inputBox").value
                     let encodedString = new TextEncoder().encode(stringToEncrypt)
-                    let checksum = new Uint8Array(await window.crypto.subtle.digest("SHA-512", encodedString)).slice(0,8)
+                    // let checksum = new Uint8Array(await window.crypto.subtle.digest("SHA-512", encodedString)).slice(0,8)
+                    let checksum = new Uint8Array(await window.crypto.subtle.sign({ name: "HMAC", hash: "SHA-512" }, HMACKey, encodedString)).slice(0,checksumSize)
                     // let randomData = await window.crypto.getRandomValues(new Uint8Array(16))
                     let msgLength = encodedString.byteLength + checksum.byteLength
                     let message = new Uint8Array(msgLength)
@@ -265,18 +267,43 @@
                     // "salt: "+bytes_to_b64(mksalt(10, iters+(oldkdf[0]), salt_xor))+"\n"+
                     // "signature: "+bytes_to_b64(signature)
                     document.getElementById("output").innerText += JSON.stringify(messageObject)+"\n"
+                    document.getElementById("inputBox").value = ""
                     // console.log(oldkdf)
                     iters++
                     // document.getElementById("output").innerText = btoa(new TextDecoder("utf-8").decode(cipherBytes))
                 })
+                document.getElementById("decrypt").addEventListener("click", async () => {
+                    let messageObject = JSON.parse(document.getElementById("decryptBox").value)
+                    let decryptionKey = await getKeyFromIters(sharedKey, HMACKey, salt_xor, messageObject.iters)
+                    let decryptedBytes = new Uint8Array(
+                        await window.crypto.subtle.decrypt(
+                            { name: "AES-GCM", iv: b64_to_bytes(messageObject.iv) },
+                            decryptionKey,
+                            b64_to_bytes(messageObject.data)
+                        )
+                    )
+                    let checksum = new Uint8Array(await window.crypto.subtle.sign(
+                        { name: "HMAC", hash: "SHA-512" },
+                        HMACKey,
+                        decryptedBytes.slice(checksumSize)
+                    )).slice(0,checksumSize)
+                    console.log(checksum, decryptedBytes.slice(0,checksumSize))
+                    // for(let i=0; i<8; i++) {calculatedChecksum[i] ^= decryptedBytes.slice(0,8)[i]}
+                    if(checksum.values == decryptedBytes.slice(0,checksumSize).values)
+                        document.getElementById("decryptOutput").innerText = new TextDecoder().decode(decryptedBytes.slice(checksumSize))
+                })
             })
         }
     </script>
-    <input type="text" style="width: 500px" id="outsidePublicKey">
+    <input type="text" style="width: 500px" id="outsidePublicKey" placeholder="Public key to use">
     <button id="insertPubKey">Use</button>
     <br>
-    <textarea id="inputBox"></textarea>
+    <textarea id="inputBox" placeholder="Message to encrypt"></textarea>
     <button id="submit">submit</button>
+    <br>
+    <textarea id="decryptBox" placeholder="Encrypted message as stringified JSON"></textarea>
+    <button id="decrypt">Decrypt</button>
+    <pre id="decryptOutput"></pre>
     <pre id="output"></pre>
     <pre id="keys"></pre>
 </head>

@@ -133,7 +133,7 @@
                     // let signingKey = await generate_signing_key()
                     let derivKey = await generate_derivation_key()
                     let exportedDerivKey = new Uint8Array(await window.crypto.subtle.exportKey("pkcs8", derivKey.privateKey))
-                    let iv = window.crypto.getRandomValues(new Uint8Array(64))
+                    let iv = window.crypto.getRandomValues(new Uint8Array(16))
                     localStorage.setItem("derivIV", bytes_to_b64(iv))
                     localStorage.setItem("derivKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, passwd, exportedDerivKey))))
                     localStorage.setItem("derivKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", derivKey.publicKey))))
@@ -228,7 +228,7 @@
                     // let iv = await window.crypto.subtle.deriveBits({name: "PBKDF2", salt: mksalt(10, iters+(oldkdf[0]^oldkdf[2])), hash: "SHA-512", iterations: 1000}, keydf, 128)
                     let iters_gen = window.crypto.getRandomValues(new Uint32Array(4))
                     let iters = (iters_gen[0] + iters_gen[1])
-                    let iv = await window.crypto.getRandomValues(new Uint8Array(32))
+                    let iv = await window.crypto.getRandomValues(new Uint8Array(16))
                     let keydf = await new_pbkdf(sharedKey, iters, salt_xor, HMACKey)
                     let encryptionKey = await derive_new_key(keydf, iters, salt_xor)
                     // globalEncryptionKey = encryptionKey

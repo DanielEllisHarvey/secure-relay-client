@@ -12,7 +12,6 @@
             return await window.crypto.subtle.generateKey({name: "ECDH", namedCurve: "P-384"}, true, ["deriveKey", "deriveBits"])
             // })
         }
-
         /**
          * Generate keypair for signature creation/verification
          * @returns Ed25519 cryptoKey
@@ -20,7 +19,6 @@
         // async function generate_signing_key() {
         //     return await window.crypto.subtle.generateKey({name: "Ed25519"}, true, ["sign", "verify"])
         // }
-
         async function derive_symmetric_key(privateKey, publicKey) {
             // let algoName = "X25519"
             // if(localStorage.usingECDH == "true") algoName = "ECDH"
@@ -48,7 +46,6 @@
             // console.log(newHBK, keydata)
             return await window.crypto.subtle.importKey("raw", newHBK, {name: "PBKDF2"}, false, ["deriveBits", "deriveKey"])
         }
-
         function bytes_to_hex(bytes) {
             let text = ""
             for(let i = 0; i<bytes.length; i++) {
@@ -56,7 +53,6 @@
             }
             return text
         }
-
         function hex_to_bytes(text) {
             let byteLength = text.length >> 1
             let bytes = new Uint8Array(byteLength)
@@ -223,26 +219,24 @@
                 document.getElementById("keys").innerText = localStorage.derivKeyPub
                 document.getElementById("submit").addEventListener("click", async () => {
                     if(listenerId != ignoreId) return
-                    // let oldkdf = new Uint8Array(await window.crypto.subtle.exportKey("raw", keydf))
+                    if(document.getElementById("inputBox").value == "") { console.log("Empty string"); return }
                     //! iv must be random
                     // let iv = await window.crypto.subtle.deriveBits({name: "PBKDF2", salt: mksalt(10, iters+(oldkdf[0]^oldkdf[2])), hash: "SHA-512", iterations: 1000}, keydf, 128)
-                    let iters_gen = window.crypto.getRandomValues(new Uint32Array(4))
+                    let iters_gen = window.crypto.getRandomValues(new Uint32Array(2))
                     let iters = (iters_gen[0] + iters_gen[1])
                     let iv = await window.crypto.getRandomValues(new Uint8Array(16))
                     let keydf = await new_pbkdf(sharedKey, iters, salt_xor, HMACKey)
                     let encryptionKey = await derive_new_key(keydf, iters, salt_xor)
-                    // globalEncryptionKey = encryptionKey
                     globaliv = iv
                     let stringToEncrypt = document.getElementById("inputBox").value
                     let encodedString = new TextEncoder().encode(stringToEncrypt)
                     // let checksum = new Uint8Array(await window.crypto.subtle.digest("SHA-512", encodedString)).slice(0,8)
                     let checksum = new Uint8Array(await window.crypto.subtle.sign({ name: "HMAC", hash: "SHA-512" }, HMACKey, encodedString)).slice(0,checksumSize)
-                    // let randomData = await window.crypto.getRandomValues(new Uint8Array(16))
                     let msgLength = encodedString.byteLength + checksum.byteLength
                     let message = new Uint8Array(msgLength)
                     message.set(checksum, 0)
                     message.set(encodedString, checksum.byteLength)
-                    let cipherBytes = new Uint8Array(await window.crypto.subtle.encrypt({name: "AES-GCM", iv}, encryptionKey, message))
+                    let cipherBytes = new Uint8Array(await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, encryptionKey, message))
                     // let signature = new Uint8Array(await window.crypto.subtle.sign({name: "Ed25519"}, signingKey.privateKey, cipherBytes))
                     // console.log(signature)
                     // let verification = await window.crypto.subtle.verify({name: "Ed25519"}, signingKey.publicKey, signature, cipherBytes)
@@ -254,25 +248,13 @@
                         "iters": iters
                     }
                     console.log(messageObject)
-                    // let decryptedString = await window.crypto.subtle.decrypt({name: "AES-GCM", iv}, encryptionKey, cipherBytes)
-                    // let rawKey = await window.crypto.subtle.exportKey("raw", encryptionKey)
-                    // let HMACKey = await window.crypto.subtle.importKey("raw", rawKey, {name: "HMAC", hash: "SHA-512"}, true, ["sign"])
-                    // console.log(new Uint8Array(await window.crypto.subtle.sign("HMAC", HMACKey, decryptedString.slice(32, decryptedString.byteLength-64))))
-                    // console.log(bytes_to_hex(new Uint8Array(decryptedString.slice(decryptedString.byteLength-64)))+" "+bytes_to_hex(new Uint8Array(await window.crypto.subtle.digest("SHA-512", decryptedString.slice(32, decryptedString.byteLength-64)))))
-                    // document.getElementById("output").innerText = "Decryped to: "+new TextDecoder().decode(decryptedString.slice(32, decryptedString.byteLength-64))+"\n"+
-                    // "Ciphertext: "+bytes_to_b64(cipherBytes)+"\n"+
-                    // "Key: "+bytes_to_b64(new Uint8Array(rawKey))+"\n"+
-                    // "Key_kdf: "+bytes_to_b64(oldkdf)+"\n"+
-                    // "iv: "+bytes_to_b64(iv)+"\n"+
-                    // "salt: "+bytes_to_b64(mksalt(10, iters+(oldkdf[0]), salt_xor))+"\n"+
-                    // "signature: "+bytes_to_b64(signature)
                     document.getElementById("output").innerText += JSON.stringify(messageObject)+"\n"
                     document.getElementById("inputBox").value = ""
-                    // console.log(oldkdf)
                     iters++
                     // document.getElementById("output").innerText = btoa(new TextDecoder("utf-8").decode(cipherBytes))
                 })
                 document.getElementById("decrypt").addEventListener("click", async () => {
+                    if(document.getElementById("decryptBox").value == "") return
                     let messageObject = JSON.parse(document.getElementById("decryptBox").value)
                     let decryptionKey = await getKeyFromIters(sharedKey, HMACKey, salt_xor, messageObject.iters)
                     let decryptedBytes = new Uint8Array(
@@ -287,8 +269,6 @@
                         HMACKey,
                         decryptedBytes.slice(checksumSize)
                     )).slice(0,checksumSize)
-                    console.log(checksum, decryptedBytes.slice(0,checksumSize))
-                    // for(let i=0; i<8; i++) {calculatedChecksum[i] ^= decryptedBytes.slice(0,8)[i]}
                     if(checksum.values == decryptedBytes.slice(0,checksumSize).values)
                         document.getElementById("decryptOutput").innerText = new TextDecoder().decode(decryptedBytes.slice(checksumSize))
                 })

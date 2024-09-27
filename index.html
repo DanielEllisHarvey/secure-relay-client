@@ -94,6 +94,7 @@
                 return text
             },
             b64_to_bytes: function b64_to_bytes(text) {
+                text.replace("=", "")
                 let bytes = new Uint8Array(3*text.length/4)
                 let byteEnum = 0
                 for(let i=0; i<text.length; i+=4) {
@@ -143,7 +144,7 @@
         let globalHMACKey = null
         let ignoreId = 0
         let checksumSize = 16
-        window.onload = () => {
+        window.onload = async () => {
             document.getElementById("keys").innerText = localStorage.derivKeyPub
             document.getElementById("insertPubKey").addEventListener("click", async () => {
                 ignoreId++
@@ -222,6 +223,22 @@
                 // localStorage.setItem("extPub", bytes_to_b64(new Uint8Array(publicKey)))
                 // key2.publicKey = await window.crypto.subtle.importKey("spki", hex_to_bytes(localStorage.getItem("extPub")), { "name": "X25519" }, true, [])
                 let sharedKey = await derive_symmetric_key(derivKey.privateKey, key2.publicKey)
+                let ws = new WebSocket("ws://127.0.0.1:8000/ws?key="+localStorage.derivKeyPub)
+                ws.onopen = async () => {
+                    ws.onmessage = async (e) => {
+                        let data = JSON.parse(e.data)
+                        console.log(data["p384key"])
+                        let serverPubkey = await window.crypto.subtle.importKey("spki", encode.b64_to_bytes(data["p384key"]), { name: "ECDH", namedCurve: "P-384" }, false, [])
+                        let sharedKey = await window.crypto.subtle.exportKey("raw", await derive_symmetric_key(derivKey.privateKey, serverPubkey))
+                        let HMACKey = await window.crypto.subtle.importKey("raw", sharedKey, { name: "HMAC", hash: "SHA-512" }, false, ["sign"])
+                        let digest = await window.crypto.subtle.sign({ name: "HMAC", hash: "SHA-512" }, HMACKey, encode.b64_to_bytes(data["randomBytesChallenge"]).slice(0,64))
+                        console.log(encode.b64_to_bytes(data["randomBytesChallenge"]))
+                        // let digest = await window.crypto.subtle.digest({ name: "SHA-256" }, encode.b64_to_bytes(data["randomBytesChallenge"]).slice(0,64))
+                        console.log(encode.arrayBuffer_to_b64(digest))
+                        ws.send(new Uint8Array(digest))
+                    }
+                }
+                console.log(encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("raw", sharedKey)))
                 globalsharedKey = sharedKey
                 let hashedSKey = await window.crypto.subtle.digest({ name: "SHA-512" }, await window.crypto.subtle.exportKey("raw", sharedKey))
                 let xor_values = new Uint32Array(hashedSKey)

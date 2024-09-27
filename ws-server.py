@@ -14,6 +14,7 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
         self.named_connections: dict = {}
+        self.clients_online: dict = {}
 
     async def connect(self, websocket: WebSocket):
         self.active_connections.append(websocket)
@@ -25,10 +26,12 @@ class ConnectionManager:
 
     def unalias(self, websocket: WebSocket):
         key = self.named_connections[websocket]
+        self.clients_online.pop(key)
         self.named_connections.pop(websocket)
         self.named_connections.pop(key)
 
-    def alias(self, name: str, websocket: WebSocket):
+    def alias(self, name: str, key: str, websocket: WebSocket):
+        self.clients_online.update({name: key})
         self.named_connections.update({name: websocket})
         self.named_connections.update({websocket: name})
 
@@ -39,7 +42,7 @@ class ConnectionManager:
         if key in self.named_connections:
             websocket = self.named_connections[key]
             await websocket.send_json(message)
-        await return_address.send_json({"type": "recipientNotFound"})
+        else: await return_address.send_json({"type": "recipientNotFound"})
 
     async def broadcast(self, message: str):
         for connection in self.active_connections:
@@ -65,24 +68,32 @@ async def websocket_endpoint(websocket: WebSocket, key: str):
     bytes_key = base64.b64decode(parsed_key)
     peer_public_key = serialization.load_der_public_key(bytes_key)
     sharedKey = privateKey.exchange(ec.ECDH(), peer_public_key)[0:32]
-    randomBytesChallenge = os.urandom(1024)
-    await websocket.send_json({"type": "challenge", "p384key": str(publicKey, "utf-8"), "randomBytesChallenge": str(base64.b64encode(randomBytesChallenge), "utf-8")})
+    randomBytesChallenge = os.urandom(64)
+    await websocket.send_json({"type": "challenge", "p384key": str(publicKey, "utf-8"), "randomBytesChallenge": str(base64.b64encode(randomBytesChallenge), "utf-8"), "onlineUsers": manager.clients_online})
     challengeResponse = await websocket.receive_bytes()
     hashInstance = hmac.HMAC(sharedKey, hashes.SHA512())
     hashInstance.update(randomBytesChallenge)
     digest = hashInstance.finalize()
     if digest == challengeResponse:
-        manager.alias(websocket,parsed_key)
+        hashInstance = hashes.Hash(hashes.SHA256())
+        hashInstance.update(bytes_key)
+        digest = hashInstance.finalize()[0:12]
+        print(str(base64.b64encode(digest), "utf-8"))
+        manager.alias(str(base64.b64encode(digest), "utf-8"), parsed_key, websocket)
         await manager.connect(websocket)
         print("challenge complete")
         print(manager.named_connections)
     # else: websocket.close(reason="Wrong challenge code.")
     # while text != "ready": text = await websocket.receive_text()
     try:
+        await websocket.send_json(manager.clients_online)
         while True:
             message = await websocket.receive_json()
             print(message)
-            await manager.send_message_by_key_json(message, message["to"], websocket)
+            if message["action"] == "getUsers":
+                await websocket.send_json(manager.clients_online)
+            if message["action"] == "msg":
+                await manager.send_message_by_key_json(message, message["to"], websocket)
             # await manager.send_personal_message(base64.b64encode(sharedKey), websocket)
     except WebSocketDisconnect:
         manager.disconnect(websocket)

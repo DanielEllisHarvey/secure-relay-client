@@ -151,7 +151,7 @@
         let ignoreId = 0
         let checksumSize = 16
         window.onload = async () => {
-            document.getElementById("keys").innerText = localStorage.derivKeyPub
+            document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
             document.getElementById("insertPubKey").addEventListener("click", async () => {
                 ignoreId++
                 document.getElementById("output").innerText = ""
@@ -295,7 +295,7 @@
                         let encryptionKey = await derive_new_key(keydf, iters, salt_xor)
                         return encryptionKey
                     }
-                    document.getElementById("keys").innerText = localStorage.derivKeyPub
+                    document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
                     document.getElementById("submit").addEventListener("click", async () => {
                         if(listenerId != ignoreId) return
                         if(document.getElementById("inputBox").value == "") { console.log("Empty string"); return }

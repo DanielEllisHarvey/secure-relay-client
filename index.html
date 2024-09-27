@@ -139,6 +139,7 @@
         }
         let getKeyFromIters = () => {}
         let globalsharedKey = null
+        let globalMessageObject = null
         let globalSalt_xor = null
         let globaliv = null
         let globalHMACKey = null
@@ -211,10 +212,12 @@
                     []
                 )
                 console.log(derivKey)
+                let ext_pubkey = encode.b64_to_bytes(document.getElementById("outsidePublicKey").value)
+                let b64_ext_pubkey = document.getElementById("outsidePublicKey").value
                 let key2 = {}
                 key2.publicKey = await window.crypto.subtle.importKey(
                     "spki",
-                    encode.b64_to_bytes(document.getElementById("outsidePublicKey").value),
+                    ext_pubkey,
                     { name: "ECDH", namedCurve: "P-384" },
                     true,
                     []
@@ -223,20 +226,38 @@
                 // localStorage.setItem("extPub", bytes_to_b64(new Uint8Array(publicKey)))
                 // key2.publicKey = await window.crypto.subtle.importKey("spki", hex_to_bytes(localStorage.getItem("extPub")), { "name": "X25519" }, true, [])
                 let sharedKey = await derive_symmetric_key(derivKey.privateKey, key2.publicKey)
+                let challengeComplete = false
                 let ws = new WebSocket("ws://127.0.0.1:8000/ws?key="+localStorage.derivKeyPub)
                 ws.onopen = async () => {
+                    challengeComplete = false
                     ws.onmessage = async (e) => {
                         let data = JSON.parse(e.data)
-                        console.log(data["p384key"])
-                        let serverPubkey = await window.crypto.subtle.importKey("spki", encode.b64_to_bytes(data["p384key"]), { name: "ECDH", namedCurve: "P-384" }, false, [])
-                        let sharedKey = await window.crypto.subtle.exportKey("raw", await derive_symmetric_key(derivKey.privateKey, serverPubkey))
-                        let HMACKey = await window.crypto.subtle.importKey("raw", sharedKey, { name: "HMAC", hash: "SHA-512" }, false, ["sign"])
-                        let digest = await window.crypto.subtle.sign({ name: "HMAC", hash: "SHA-512" }, HMACKey, encode.b64_to_bytes(data["randomBytesChallenge"]).slice(0,64))
-                        console.log(encode.b64_to_bytes(data["randomBytesChallenge"]))
-                        // let digest = await window.crypto.subtle.digest({ name: "SHA-256" }, encode.b64_to_bytes(data["randomBytesChallenge"]).slice(0,64))
-                        console.log(encode.arrayBuffer_to_b64(digest))
-                        ws.send(new Uint8Array(digest))
+                        console.log(data)
+                        if(data["type"] == "challenge") {
+                            console.log("challenge")
+                            console.log(data["p384key"])
+                            let serverPubkey = await window.crypto.subtle.importKey("spki", encode.b64_to_bytes(data["p384key"]), { name: "ECDH", namedCurve: "P-384" }, false, [])
+                            let sharedKey = await window.crypto.subtle.exportKey("raw", await derive_symmetric_key(derivKey.privateKey, serverPubkey))
+                            let HMACKey = await window.crypto.subtle.importKey("raw", sharedKey, { name: "HMAC", hash: "SHA-512" }, false, ["sign"])
+                            let digest = await window.crypto.subtle.sign({ name: "HMAC", hash: "SHA-512" }, HMACKey, encode.b64_to_bytes(data["randomBytesChallenge"]).slice(0,1024))
+                            console.log(encode.b64_to_bytes(data["randomBytesChallenge"]))
+                            // let digest = await window.crypto.subtle.digest({ name: "SHA-256" }, encode.b64_to_bytes(data["randomBytesChallenge"]).slice(0,64))
+                            console.log(encode.arrayBuffer_to_b64(digest))
+                            ws.send(new Uint8Array(digest))
+                            challengeComplete = true
+                        }
+                        else if(data["type"] == "recipientNotFound") {
+                            console.log("Recipient is not online.")
+                            decrypt(false, globalMessageObject)
+                        }
+                        else {
+                            decrypt(false, e.data)
+                        }
                     }
+                }
+
+                ws.onclose = (e) => {
+                    ws = new WebSocket("ws://127.0.0.1:8000/ws?key="+localStorage.derivKeyPub)
                 }
                 console.log(encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("raw", sharedKey)))
                 globalsharedKey = sharedKey
@@ -289,17 +310,29 @@
                         "data": encode.arrayBuffer_to_b64(cipherBytes),
                         "iv": encode.bytes_to_b64(iv),
                         // "signature": bytes_to_b64(signature),
-                        "iters": encode.int_to_b64(iters)
+                        "iters": encode.int_to_b64(iters),
+                        "to": b64_ext_pubkey,
+                        "from": localStorage.derivKeyPub
                     }
+                    globalMessageObject = messageObject
                     console.log(messageObject)
-                    document.getElementById("output").innerText += JSON.stringify(messageObject)+"\n"
+                    ws.send(JSON.stringify(messageObject))
+                    // document.getElementById("output").innerText += JSON.stringify(messageObject)+"\n"
                     document.getElementById("inputBox").value = ""
                     iters++
                     // document.getElementById("output").innerText = btoa(new TextDecoder("utf-8").decode(cipherBytes))
                 })
-                document.getElementById("decrypt").addEventListener("click", async () => {
-                    if(document.getElementById("decryptBox").value == "") return
-                    let messageObject = JSON.parse(document.getElementById("decryptBox").value)
+                async function decrypt(textbox, obj) {
+                    let messageObject = null
+                    if(textbox) {
+                        if(document.getElementById("decryptBox").value == "") return
+                        messageObject = JSON.parse(document.getElementById("decryptBox").value)
+                    }
+                    else {
+                        console.log(obj, typeof obj)
+                        if(typeof obj == "object") messageObject = obj
+                        else messageObject = JSON.parse(obj)
+                    }
                     let decryptionKey = await getKeyFromIters(sharedKey, HMACKey, salt_xor, encode.b64_to_int(messageObject.iters))
                     let decryptedBytes = new Uint8Array(
                         await window.crypto.subtle.decrypt(
@@ -315,7 +348,8 @@
                     )).slice(0,checksumSize)
                     if(checksum.values == decryptedBytes.slice(0,checksumSize).values)
                         document.getElementById("decryptOutput").innerText = new TextDecoder().decode(decryptedBytes.slice(checksumSize))
-                })
+                }
+                document.getElementById("decrypt").addEventListener("click", async () => await decrypt(true))
             })
         }
     </script>

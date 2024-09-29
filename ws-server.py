@@ -26,7 +26,7 @@ class ConnectionManager:
 
     def unalias(self, websocket: WebSocket):
         key = self.named_connections[websocket]
-        self.clients_online.pop(key)
+        # self.clients_online.pop(key)
         self.named_connections.pop(websocket)
         self.named_connections.pop(key)
 
@@ -86,7 +86,7 @@ async def websocket_endpoint(websocket: WebSocket, key: str):
         await manager.connect(websocket)
         print("challenge complete")
         print(manager.named_connections)
-    # else: websocket.close(reason="Wrong challenge code.")
+    else: websocket.close(reason="Wrong challenge code.")
     # while text != "ready": text = await websocket.receive_text()
     try:
         await websocket.send_json(manager.clients_online)

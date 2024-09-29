@@ -373,7 +373,7 @@
                             HMACKey,
                             decryptedBytes.slice(checksumSize)
                         )).slice(0,checksumSize)
-                        if(messageObject["from"] == await get_user_id(localStorage.derivKeyPub)) messageObject["from"] = "You: "
+                        if(messageObject["from"] == await get_user_id(localStorage.derivKeyPub)) messageObject["from"] = "You"
                         if(checksum.values == decryptedBytes.slice(0,checksumSize).values)
                             document.getElementById("decryptOutput").innerText += messageObject["from"] +": " + new TextDecoder().decode(decryptedBytes.slice(checksumSize)) + "\n"
                     }

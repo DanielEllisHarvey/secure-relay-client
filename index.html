@@ -46,6 +46,10 @@
             // console.log(newHBK, keydata)
             return await window.crypto.subtle.importKey("raw", newHBK, {name: "PBKDF2"}, false, ["deriveBits", "deriveKey"])
         }
+        async function get_user_id(publicKey) {
+            digest = new Uint8Array(await window.crypto.subtle.digest({ name: "SHA-256" }, encode.b64_to_bytes(publicKey))).slice(0,12)
+            return encode.bytes_to_b64(digest)
+        }
         let encode = {
             int_to_uint8: function int_to_uint8(value) {
                 let bytes = new Uint8Array(4) // 32-bit short
@@ -94,6 +98,7 @@
                 return text
             },
             b64_to_bytes: function b64_to_bytes(text) {
+                text.replace("=", "")
                 let bytes = new Uint8Array(3*text.length/4)
                 let byteEnum = 0
                 for(let i=0; i<text.length; i+=4) {
@@ -138,13 +143,15 @@
         }
         let getKeyFromIters = () => {}
         let globalsharedKey = null
+        let globalMessageObject = null
         let globalSalt_xor = null
         let globaliv = null
         let globalHMACKey = null
+        let globalws = null
         let ignoreId = 0
         let checksumSize = 16
-        window.onload = () => {
-            document.getElementById("keys").innerText = localStorage.derivKeyPub
+        window.onload = async () => {
+            document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
             document.getElementById("insertPubKey").addEventListener("click", async () => {
                 ignoreId++
                 document.getElementById("output").innerText = ""
@@ -210,98 +217,172 @@
                     []
                 )
                 console.log(derivKey)
+                let ext_pubkey = null
+                let b64_ext_pubkey = null
                 let key2 = {}
-                key2.publicKey = await window.crypto.subtle.importKey(
-                    "spki",
-                    encode.b64_to_bytes(document.getElementById("outsidePublicKey").value),
-                    { name: "ECDH", namedCurve: "P-384" },
-                    true,
-                    []
-                )
-                // let publicKey = await window.crypto.subtle.exportKey("spki", key2.publicKey)
-                // localStorage.setItem("extPub", bytes_to_b64(new Uint8Array(publicKey)))
-                // key2.publicKey = await window.crypto.subtle.importKey("spki", hex_to_bytes(localStorage.getItem("extPub")), { "name": "X25519" }, true, [])
-                let sharedKey = await derive_symmetric_key(derivKey.privateKey, key2.publicKey)
-                globalsharedKey = sharedKey
-                let hashedSKey = await window.crypto.subtle.digest({ name: "SHA-512" }, await window.crypto.subtle.exportKey("raw", sharedKey))
-                let xor_values = new Uint32Array(hashedSKey)
-                const salt_xor = xor_values[xor_values[0] & 63] ^ xor_values[xor_values[1] & 63] ^ xor_values[xor_values[62] & 63] ^ xor_values[xor_values[63] & 63]
-                globalSalt_xor = salt_xor
-                let keydf = await new_pbkdf(sharedKey, 0, salt_xor)
-                // let encryptionKey = await derive_new_key(keydf, 0, salt_xor)
-                let salt_xor_xor = mksalt(9000, salt_xor+91, salt_xor)
-                let keyData = new Uint8Array(256)
-                for(let i=0; i<512; i++) keyData[i&255] ^= mksalt(50+(salt_xor&0xff), 0x6837-i, salt_xor^salt_xor_xor[i%32])[i&15] & 0xff
-                let HMACKey = await window.crypto.subtle.importKey("raw", keyData, {name: "HMAC", hash: "SHA-512"}, true, ["sign"])
-                globalHMACKey = HMACKey
-                // console.log("HMACKey: ", new Uint8Array(await window.crypto.subtle.exportKey("raw", HMACKey)))
-                console.log(HMACKey)
-                let iters = 0
-                let listenerId = ignoreId
-                getKeyFromIters = async (sharedKey, HMACKey, salt_xor, iters) => {
-                    let keydf = await new_pbkdf(sharedKey, iters, salt_xor, HMACKey)
-                    let encryptionKey = await derive_new_key(keydf, iters, salt_xor)
-                    return encryptionKey
-                }
-                document.getElementById("keys").innerText = localStorage.derivKeyPub
-                document.getElementById("submit").addEventListener("click", async () => {
-                    if(listenerId != ignoreId) return
-                    if(document.getElementById("inputBox").value == "") { console.log("Empty string"); return }
-                    //! iv must be random
-                    // let iv = await window.crypto.subtle.deriveBits({name: "PBKDF2", salt: mksalt(10, iters+(oldkdf[0]^oldkdf[2])), hash: "SHA-512", iterations: 1000}, keydf, 128)
-                    let iters_gen = window.crypto.getRandomValues(new Uint32Array(4))
-                    let iters = (iters_gen[0] ^ iters_gen[1] ^ iters_gen[3] ^ iters_gen[4])
-                    let iv = await window.crypto.getRandomValues(new Uint8Array(16))
-                    let keydf = await new_pbkdf(sharedKey, iters, salt_xor, HMACKey)
-                    let encryptionKey = await derive_new_key(keydf, iters, salt_xor)
-                    globaliv = iv
-                    let stringToEncrypt = document.getElementById("inputBox").value
-                    let encodedString = new TextEncoder().encode(stringToEncrypt)
-                    // let checksum = new Uint8Array(await window.crypto.subtle.digest("SHA-512", encodedString)).slice(0,8)
-                    let checksum = new Uint8Array(await window.crypto.subtle.sign({ name: "HMAC", hash: "SHA-512" }, HMACKey, encodedString)).slice(0,checksumSize)
-                    let msgLength = encodedString.byteLength + checksum.byteLength
-                    let message = new Uint8Array(msgLength)
-                    message.set(checksum, 0)
-                    message.set(encodedString, checksum.byteLength)
-                    let cipherBytes = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, encryptionKey, message)
-                    // let signature = new Uint8Array(await window.crypto.subtle.sign({name: "Ed25519"}, signingKey.privateKey, cipherBytes))
-                    // console.log(signature)
-                    // let verification = await window.crypto.subtle.verify({name: "Ed25519"}, signingKey.publicKey, signature, cipherBytes)
-                    // console.log(verification)
-                    let messageObject = {
-                        "data": encode.arrayBuffer_to_b64(cipherBytes),
-                        "iv": encode.bytes_to_b64(iv),
-                        // "signature": bytes_to_b64(signature),
-                        "iters": encode.int_to_b64(iters)
+                let sharedKey = null
+                let challengeComplete = false
+                let messageQueue = []
+                let decrypt = () => {}
+                let ws = new WebSocket("ws://127.0.0.1:8000/ws?key="+localStorage.derivKeyPub)
+                ws.onopen = async () => {
+                    challengeComplete = false
+                    ws.onmessage = async (e) => {
+                        let data = JSON.parse(e.data)
+                        console.log(data)
+                        if(data["type"] == "challenge") {
+                            b64_ext_pubkey = document.getElementById("outsidePublicKey").value
+                            if(b64_ext_pubkey.length == 16) {
+                                b64_ext_pubkey = data["onlineUsers"][b64_ext_pubkey]
+                                console.log(b64_ext_pubkey)
+                            }
+                            ext_pubkey = encode.b64_to_bytes(b64_ext_pubkey)
+                            key2.publicKey = await window.crypto.subtle.importKey(
+                                "spki",
+                                ext_pubkey,
+                                { name: "ECDH", namedCurve: "P-384" },
+                                true,
+                                []
+                            )
+                            sharedKey = await derive_symmetric_key(derivKey.privateKey, key2.publicKey)
+                            console.log("challenge")
+                            console.log(data["p384key"])
+                            let serverPubkey = await window.crypto.subtle.importKey("spki", encode.b64_to_bytes(data["p384key"]), { name: "ECDH", namedCurve: "P-384" }, false, [])
+                            let serverSharedKey = await window.crypto.subtle.exportKey("raw", await derive_symmetric_key(derivKey.privateKey, serverPubkey))
+                            let HMACKey = await window.crypto.subtle.importKey("raw", serverSharedKey, { name: "HMAC", hash: "SHA-512" }, false, ["sign"])
+                            let digest = await window.crypto.subtle.sign({ name: "HMAC", hash: "SHA-512" }, HMACKey, encode.b64_to_bytes(data["randomBytesChallenge"]).slice(0,64))
+                            console.log(encode.b64_to_bytes(data["randomBytesChallenge"]))
+                            // let digest = await window.crypto.subtle.digest({ name: "SHA-256" }, encode.b64_to_bytes(data["randomBytesChallenge"]).slice(0,64))
+                            console.log(encode.arrayBuffer_to_b64(digest))
+                            ws.send(new Uint8Array(digest))
+                            challengeComplete = true
+                            ws.send('{"action":"hello","to":"'+await get_user_id(b64_ext_pubkey)+'"}')
+                            document.getElementById("invisBtn").click()
+                        }
+                        else if(data["type"] == "recipientNotFound") {
+                            // document.getElementById("decryptOutput").innerText = "Recipient is not online."
+                            console.log(messageQueue)
+                        }
+                        else if(data["action"] == "msg") {
+                            messageQueue[messageQueue.length] = typeof JSON.parse(e.data) == "string" ? JSON.parse(JSON.parse(e.data)) : JSON.parse(e.data)
+                            decrypt(false, e.data)
+                        }
+                        else if(data["action"] == "hello") {
+                            messageQueue.forEach(async message => {
+                                message["to"] = await get_user_id(b64_ext_pubkey)
+                                ws.send(JSON.stringify(message))
+                            });
+                            document.getElementById("output").innerText = ""
+                        }
+                        else { console.log(data) }
                     }
-                    console.log(messageObject)
-                    document.getElementById("output").innerText += JSON.stringify(messageObject)+"\n"
-                    document.getElementById("inputBox").value = ""
-                    iters++
-                    // document.getElementById("output").innerText = btoa(new TextDecoder("utf-8").decode(cipherBytes))
-                })
-                document.getElementById("decrypt").addEventListener("click", async () => {
-                    if(document.getElementById("decryptBox").value == "") return
-                    let messageObject = JSON.parse(document.getElementById("decryptBox").value)
-                    let decryptionKey = await getKeyFromIters(sharedKey, HMACKey, salt_xor, encode.b64_to_int(messageObject.iters))
-                    let decryptedBytes = new Uint8Array(
-                        await window.crypto.subtle.decrypt(
-                            { name: "AES-GCM", iv: encode.b64_to_bytes(messageObject.iv) },
-                            decryptionKey,
-                            encode.b64_to_bytes(messageObject.data)
+                }
+
+                ws.onclose = (e) => {
+                    ws = new WebSocket("ws://127.0.0.1:8000/ws?key="+localStorage.derivKeyPub)
+                }
+                globalws = ws
+                document.getElementById("invisBtn").addEventListener("click", async () => {
+                    console.log(encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("raw", sharedKey)))
+                    globalsharedKey = sharedKey
+                    let hashedSKey = await window.crypto.subtle.digest({ name: "SHA-512" }, await window.crypto.subtle.exportKey("raw", sharedKey))
+                    let xor_values = new Uint32Array(hashedSKey)
+                    const salt_xor = xor_values[xor_values[0] & 63] ^ xor_values[xor_values[1] & 63] ^ xor_values[xor_values[62] & 63] ^ xor_values[xor_values[63] & 63]
+                    globalSalt_xor = salt_xor
+                    let keydf = await new_pbkdf(sharedKey, 0, salt_xor)
+                    // let encryptionKey = await derive_new_key(keydf, 0, salt_xor)
+                    let salt_xor_xor = mksalt(9000, salt_xor+91, salt_xor)
+                    let keyData = new Uint8Array(256)
+                    for(let i=0; i<512; i++) keyData[i&255] ^= mksalt(50+(salt_xor&0xff), 0x6837-i, salt_xor^salt_xor_xor[i%32])[i&15] & 0xff
+                    let HMACKey = await window.crypto.subtle.importKey("raw", keyData, {name: "HMAC", hash: "SHA-512"}, true, ["sign"])
+                    globalHMACKey = HMACKey
+                    // console.log("HMACKey: ", new Uint8Array(await window.crypto.subtle.exportKey("raw", HMACKey)))
+                    console.log(HMACKey)
+                    let iters = 0
+                    let listenerId = ignoreId
+                    getKeyFromIters = async (sharedKey, HMACKey, salt_xor, iters) => {
+                        let keydf = await new_pbkdf(sharedKey, iters, salt_xor, HMACKey)
+                        let encryptionKey = await derive_new_key(keydf, iters, salt_xor)
+                        return encryptionKey
+                    }
+                    document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
+                    document.getElementById("submit").addEventListener("click", async () => {
+                        if(listenerId != ignoreId) return
+                        if(document.getElementById("inputBox").value == "") { console.log("Empty string"); return }
+                        //! iv must be random
+                        // let iv = await window.crypto.subtle.deriveBits({name: "PBKDF2", salt: mksalt(10, iters+(oldkdf[0]^oldkdf[2])), hash: "SHA-512", iterations: 1000}, keydf, 128)
+                        let iters_gen = window.crypto.getRandomValues(new Uint32Array(4))
+                        let iters = (iters_gen[0] ^ iters_gen[1] ^ iters_gen[3] ^ iters_gen[4])
+                        let iv = await window.crypto.getRandomValues(new Uint8Array(16))
+                        let keydf = await new_pbkdf(sharedKey, iters, salt_xor, HMACKey)
+                        let encryptionKey = await derive_new_key(keydf, iters, salt_xor)
+                        globaliv = iv
+                        let stringToEncrypt = document.getElementById("inputBox").value
+                        let encodedString = new TextEncoder().encode(stringToEncrypt)
+                        // let checksum = new Uint8Array(await window.crypto.subtle.digest("SHA-512", encodedString)).slice(0,8)
+                        let checksum = new Uint8Array(await window.crypto.subtle.sign({ name: "HMAC", hash: "SHA-512" }, HMACKey, encodedString)).slice(0,checksumSize)
+                        let msgLength = encodedString.byteLength + checksum.byteLength
+                        let message = new Uint8Array(msgLength)
+                        message.set(checksum, 0)
+                        message.set(encodedString, checksum.byteLength)
+                        let cipherBytes = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, encryptionKey, message)
+                        // let signature = new Uint8Array(await window.crypto.subtle.sign({name: "Ed25519"}, signingKey.privateKey, cipherBytes))
+                        // console.log(signature)
+                        // let verification = await window.crypto.subtle.verify({name: "Ed25519"}, signingKey.publicKey, signature, cipherBytes)
+                        // console.log(verification)
+                        let messageObject = {
+                            "action": "msg",
+                            "data": encode.arrayBuffer_to_b64(cipherBytes),
+                            "iv": encode.bytes_to_b64(iv),
+                            // "signature": bytes_to_b64(signature),
+                            "iters": encode.int_to_b64(iters),
+                            "to": await get_user_id(b64_ext_pubkey),
+                            "from": await get_user_id(localStorage.derivKeyPub)
+                        }
+                        globalMessageObject = messageObject
+                        console.log(messageObject)
+                        ws.send(JSON.stringify(messageObject))
+                        messageQueue[messageQueue.length] = messageObject
+                        document.getElementById("decryptOutput").innerText += "You: " + stringToEncrypt + "\n"
+                        // document.getElementById("output").innerText += JSON.stringify(messageObject)+"\n"
+                        document.getElementById("inputBox").value = ""
+                        iters++
+                        // document.getElementById("output").innerText = btoa(new TextDecoder("utf-8").decode(cipherBytes))
+                    })
+                    decrypt = async (textbox, obj) => {
+                        let messageObject = null
+                        if(textbox) {
+                            if(document.getElementById("decryptBox").value == "") return
+                            messageObject = JSON.parse(document.getElementById("decryptBox").value)
+                        }
+                        else {
+                            // console.log(obj, typeof obj)
+                            if(typeof obj == "object") messageObject = obj
+                            else messageObject = JSON.parse(obj)
+                        }
+                        let decryptionKey = await getKeyFromIters(sharedKey, HMACKey, salt_xor, encode.b64_to_int(messageObject.iters))
+                        let decryptedBytes = new Uint8Array(
+                            await window.crypto.subtle.decrypt(
+                                { name: "AES-GCM", iv: encode.b64_to_bytes(messageObject.iv) },
+                                decryptionKey,
+                                encode.b64_to_bytes(messageObject.data)
+                            )
                         )
-                    )
-                    let checksum = new Uint8Array(await window.crypto.subtle.sign(
-                        { name: "HMAC", hash: "SHA-512" },
-                        HMACKey,
-                        decryptedBytes.slice(checksumSize)
-                    )).slice(0,checksumSize)
-                    if(checksum.values == decryptedBytes.slice(0,checksumSize).values)
-                        document.getElementById("decryptOutput").innerText = new TextDecoder().decode(decryptedBytes.slice(checksumSize))
+                        let checksum = new Uint8Array(await window.crypto.subtle.sign(
+                            { name: "HMAC", hash: "SHA-512" },
+                            HMACKey,
+                            decryptedBytes.slice(checksumSize)
+                        )).slice(0,checksumSize)
+                        if(messageObject["from"] == await get_user_id(localStorage.derivKeyPub)) messageObject["from"] = "You: "
+                        if(checksum.values == decryptedBytes.slice(0,checksumSize).values)
+                            document.getElementById("decryptOutput").innerText += messageObject["from"] +": " + new TextDecoder().decode(decryptedBytes.slice(checksumSize)) + "\n"
+                    }
+                    document.getElementById("decrypt").addEventListener("click", async () => await decrypt(true))
                 })
             })
         }
     </script>
+    <button id="invisBtn" style="visibility: hidden; position: absolute;"></button>
     <input type="text" style="width: 500px" id="outsidePublicKey" placeholder="Public key to use">
     <button id="insertPubKey">Use</button>
     <br>

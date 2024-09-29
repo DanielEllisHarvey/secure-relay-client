@@ -42,7 +42,7 @@ class ConnectionManager:
         if key in self.named_connections:
             websocket = self.named_connections[key]
             await websocket.send_json(message)
-        else: await return_address.send_json({"type": "recipientNotFound"})
+        elif message["action"] != "hello": await return_address.send_json({"type": "recipientNotFound"})
 
     async def broadcast(self, message: str):
         for connection in self.active_connections:
@@ -67,9 +67,11 @@ async def websocket_endpoint(websocket: WebSocket, key: str):
     parsed_key = key.replace(" ", "+")
     bytes_key = base64.b64decode(parsed_key)
     peer_public_key = serialization.load_der_public_key(bytes_key)
+    
     sharedKey = privateKey.exchange(ec.ECDH(), peer_public_key)[0:32]
     randomBytesChallenge = os.urandom(64)
     await websocket.send_json({"type": "challenge", "p384key": str(publicKey, "utf-8"), "randomBytesChallenge": str(base64.b64encode(randomBytesChallenge), "utf-8"), "onlineUsers": manager.clients_online})
+    
     challengeResponse = await websocket.receive_bytes()
     hashInstance = hmac.HMAC(sharedKey, hashes.SHA512())
     hashInstance.update(randomBytesChallenge)
@@ -78,6 +80,7 @@ async def websocket_endpoint(websocket: WebSocket, key: str):
         hashInstance = hashes.Hash(hashes.SHA256())
         hashInstance.update(bytes_key)
         digest = hashInstance.finalize()[0:12]
+        
         print(str(base64.b64encode(digest), "utf-8"))
         manager.alias(str(base64.b64encode(digest), "utf-8"), parsed_key, websocket)
         await manager.connect(websocket)
@@ -90,9 +93,9 @@ async def websocket_endpoint(websocket: WebSocket, key: str):
         while True:
             message = await websocket.receive_json()
             print(message)
-            if message["action"] == "getUsers":
-                await websocket.send_json(manager.clients_online)
             if message["action"] == "msg":
+                await manager.send_message_by_key_json(message, message["to"], websocket)
+            if message["action"] == "hello":
                 await manager.send_message_by_key_json(message, message["to"], websocket)
             # await manager.send_personal_message(base64.b64encode(sharedKey), websocket)
     except WebSocketDisconnect:

@@ -222,6 +222,7 @@
                 let key2 = {}
                 let sharedKey = null
                 let challengeComplete = false
+                let messageQueue = []
                 let decrypt = () => {}
                 let ws = new WebSocket("ws://127.0.0.1:8000/ws?key="+localStorage.derivKeyPub)
                 ws.onopen = async () => {
@@ -255,14 +256,23 @@
                             console.log(encode.arrayBuffer_to_b64(digest))
                             ws.send(new Uint8Array(digest))
                             challengeComplete = true
+                            ws.send('{"action":"hello","to":"'+await get_user_id(b64_ext_pubkey)+'"}')
                             document.getElementById("invisBtn").click()
                         }
                         else if(data["type"] == "recipientNotFound") {
-                            console.log("Recipient is not online.")
-                            decrypt(false, globalMessageObject)
+                            // document.getElementById("decryptOutput").innerText = "Recipient is not online."
+                            console.log(messageQueue)
                         }
-                        else if(data["action"] == "msg"){
+                        else if(data["action"] == "msg") {
+                            messageQueue[messageQueue.length] = typeof JSON.parse(e.data) == "string" ? JSON.parse(JSON.parse(e.data)) : JSON.parse(e.data)
                             decrypt(false, e.data)
+                        }
+                        else if(data["action"] == "hello") {
+                            messageQueue.forEach(async message => {
+                                message["to"] = await get_user_id(b64_ext_pubkey)
+                                ws.send(JSON.stringify(message))
+                            });
+                            document.getElementById("output").innerText = ""
                         }
                         else { console.log(data) }
                     }
@@ -332,6 +342,8 @@
                         globalMessageObject = messageObject
                         console.log(messageObject)
                         ws.send(JSON.stringify(messageObject))
+                        messageQueue[messageQueue.length] = messageObject
+                        document.getElementById("decryptOutput").innerText += "You: " + stringToEncrypt + "\n"
                         // document.getElementById("output").innerText += JSON.stringify(messageObject)+"\n"
                         document.getElementById("inputBox").value = ""
                         iters++
@@ -361,8 +373,9 @@
                             HMACKey,
                             decryptedBytes.slice(checksumSize)
                         )).slice(0,checksumSize)
+                        if(messageObject["from"] == await get_user_id(localStorage.derivKeyPub)) messageObject["from"] = "You: "
                         if(checksum.values == decryptedBytes.slice(0,checksumSize).values)
-                            document.getElementById("decryptOutput").innerText = new TextDecoder().decode(decryptedBytes.slice(checksumSize))
+                            document.getElementById("decryptOutput").innerText += messageObject["from"] +": " + new TextDecoder().decode(decryptedBytes.slice(checksumSize)) + "\n"
                     }
                     document.getElementById("decrypt").addEventListener("click", async () => await decrypt(true))
                 })

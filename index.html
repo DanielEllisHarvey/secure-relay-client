@@ -51,7 +51,19 @@
             return encode.bytes_to_b64(digest)
         }
         function register_key() {
-            new WebSocket("ws://127.0.0.1:8000/register?key="+localStorage.derivKeyPub)
+            new WebSocket("ws://127.0.0.1:8000/register?key="+localStorage.derivKeyPub).onmessage = (e) => {
+                clientsOnline = JSON.parse(e.data)
+                noUsers = Object.keys(clientsOnline).length
+                document.getElementById("users").innerText = Object.keys(clientsOnline)
+            }
+        }
+        function get_online_users() {
+            new WebSocket("ws://127.0.0.1:8000/register?n="+noUsers.toString()).onmessage = (e) => {
+                // if(JSON.parse(e.data)["n"] > noUsers)
+                noUsers = Object.keys(clientsOnline).length
+                clientsOnline = JSON.parse(e.data)
+                document.getElementById("users").innerText = Object.keys(clientsOnline)
+            }
         }
         let encode = {
             int_to_uint8: function int_to_uint8(value) {
@@ -144,6 +156,7 @@
                 encode.b64_to_bytes(cipherString)
             )).slice(checksumSize))
         }
+        let clientsOnline = {}
         let getKeyFromIters = () => {}
         let globalsharedKey = null
         let globalMessageObject = null
@@ -153,11 +166,13 @@
         let globalws = null
         let ignoreId = 0
         let checksumSize = 16
+        let noUsers = 0
         window.onload = async () => {
             if(localStorage.getItem("derivKeyPub") != null) {
                 register_key()
                 document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
             }
+            setInterval(() => { get_online_users() }, 20000)
             document.getElementById("generate").addEventListener("click", async () => {
                 if(!confirm("Are you sure you want to generate a new keypair?\n\nThis will overwrite your current keypair.")) return
                 let passphrase = prompt("Password:")
@@ -289,7 +304,7 @@
                         if(data["type"] == "challenge") {
                             b64_ext_pubkey = document.getElementById("outsidePublicKey").value
                             if(b64_ext_pubkey.length == 16) {
-                                b64_ext_pubkey = data["onlineUsers"][b64_ext_pubkey]
+                                b64_ext_pubkey = clientsOnline[b64_ext_pubkey]
                                 console.log(b64_ext_pubkey)
                             }
                             ext_pubkey = encode.b64_to_bytes(b64_ext_pubkey)
@@ -459,6 +474,7 @@
             </div>
         </fieldset>
     </details>
+    <pre id="users"></pre>
     <input type="text" style="width: 500px" id="outsidePublicKey" placeholder="Public key to use">
     <button id="insertPubKey">Use</button>
     <br>

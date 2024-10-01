@@ -66,11 +66,16 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 @app.websocket("/register")
-async def register_key(websocket: WebSocket, key: str):
+async def register_key(websocket: WebSocket, key: str | None = None, n: int | int = 0):
     await websocket.accept()
-    parsed_key = key.replace(" ", "+")
-    bytes_key = base64.b64decode(parsed_key)
-    manager.add_key(bytes_key)
+    if key != None:
+        parsed_key = key.replace(" ", "+")
+        bytes_key = base64.b64decode(parsed_key)
+        manager.add_key(bytes_key)
+    if n >= len(manager.clients_online):
+        await websocket.close()
+        return
+    await websocket.send_json(manager.clients_online)
     await websocket.close()
 
 @app.websocket("/ws")
@@ -85,7 +90,7 @@ async def websocket_endpoint(websocket: WebSocket, key: str):
     
     sharedKey = privateKey.exchange(ec.ECDH(), peer_public_key)[0:32]
     randomBytesChallenge = os.urandom(64)
-    await websocket.send_json({"type": "challenge", "p384key": str(publicKey, "utf-8"), "randomBytesChallenge": str(base64.b64encode(randomBytesChallenge), "utf-8"), "onlineUsers": manager.clients_online})
+    await websocket.send_json({"type": "challenge", "p384key": str(publicKey, "utf-8"), "randomBytesChallenge": str(base64.b64encode(randomBytesChallenge), "utf-8")})
     
     challengeResponse = await websocket.receive_bytes()
     hashInstance = hmac.HMAC(sharedKey, hashes.SHA512())
@@ -100,7 +105,7 @@ async def websocket_endpoint(websocket: WebSocket, key: str):
     else: websocket.close(reason="Wrong challenge code.")
     # while text != "ready": text = await websocket.receive_text()
     try:
-        await websocket.send_json(manager.clients_online)
+        # await websocket.send_json(manager.clients_online)
         while True:
             message = await websocket.receive_json()
             print(message)

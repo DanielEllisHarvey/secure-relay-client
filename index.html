@@ -163,6 +163,23 @@
                 anchor.href = "data:application/json;,"+escape(JSON.stringify(keyObj))
                 document.getElementById("invisAnchor").click()
             })
+            document.getElementById("uploadPicker").addEventListener("change", async (e) => {
+                if(!confirm("This will overwrite the current keypair")) return
+                let file = e.target.files.item(0)
+                console.log(typeof file)
+                console.log(file)
+                let reader = new FileReader()
+                reader.readAsText(file)
+                reader.onload = async () => {
+                    let keyData = JSON.parse(reader.result)
+
+                    console.log(keyData)
+                    Object.keys(keyData).forEach((element) => {
+                        localStorage.setItem(element, keyData[element])
+                    })
+                    document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
+                }
+            })
             document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
             document.getElementById("insertPubKey").addEventListener("click", async () => {
                 ignoreId++
@@ -397,11 +414,22 @@
     </script>
     <button id="invisBtn" style="visibility: hidden; position: absolute;"></button>
     <a id="invisAnchor" style="visibility: hidden; position: absolute;"></a>
-    <fieldset style="width: fit-content">
+    <fieldset style="width: fit-content; display: flex">
         <legend>Advanced settings</legend>
+        <div>
+        <pre style="padding-right: 28px">Generate key</pre>
         <button id="generate">Generate</button>
-        <button id="upload">Upload</button>
+        </div>
+        <br>
+        <div>
+        <pre>Upload key</pre>
+        <input id="uploadPicker" type="file">
+        </div>
+        <br>
+        <div>
+        <pre>Download key</pre>
         <button id="download">Download</button>
+        </div>
     </fieldset>
     <input type="text" style="width: 500px" id="outsidePublicKey" placeholder="Public key to use">
     <button id="insertPubKey">Use</button>

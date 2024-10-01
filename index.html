@@ -50,6 +50,9 @@
             digest = new Uint8Array(await window.crypto.subtle.digest({ name: "SHA-256" }, encode.b64_to_bytes(publicKey))).slice(0,12)
             return encode.bytes_to_b64(digest)
         }
+        function register_key() {
+            new WebSocket("ws://127.0.0.1:8000/register?key="+localStorage.derivKeyPub)
+        }
         let encode = {
             int_to_uint8: function int_to_uint8(value) {
                 let bytes = new Uint8Array(4) // 32-bit short
@@ -151,6 +154,10 @@
         let ignoreId = 0
         let checksumSize = 16
         window.onload = async () => {
+            if(localStorage.getItem("derivKeyPub") != null) {
+                register_key()
+                document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
+            }
             document.getElementById("generate").addEventListener("click", async () => {
                 if(!confirm("Are you sure you want to generate a new keypair?\n\nThis will overwrite your current keypair.")) return
                 let passphrase = prompt("Password:")
@@ -167,6 +174,7 @@
                 // localStorage.setItem("signKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.wrapKey("pkcs8", signingKey.privateKey, passwd, { name: "AES-KW" }))))
                 // localStorage.setItem("signKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", signingKey.publicKey))))
                 document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
+                register_key()
             })
             document.getElementById("download").addEventListener("click", async () => {
                 let anchor = document.getElementById("invisAnchor")
@@ -195,10 +203,11 @@
                         localStorage.setItem(element, keyData[element])
                     })
                     document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
+                    register_key()
                 }
             })
-            document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
             document.getElementById("insertPubKey").addEventListener("click", async () => {
+                // if(document.getElementById("outsidePublicKey").value == "") { register_key(localStorage.derivKeyPub); return }
                 ignoreId++
                 document.getElementById("output").innerText = ""
                 document.getElementById("decryptOutput").innerText = ""

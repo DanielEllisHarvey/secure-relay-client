@@ -271,8 +271,10 @@
                 let challengeComplete = false
                 let messageQueue = []
                 let decrypt = () => {}
+                let listenerId = ignoreId
                 let ws = new WebSocket("ws://127.0.0.1:8000/ws?key="+localStorage.derivKeyPub)
                 ws.onopen = async () => {
+                    if(listenerId != ignoreId) return
                     challengeComplete = false
                     ws.onmessage = async (e) => {
                         let data = JSON.parse(e.data)
@@ -346,7 +348,6 @@
                     // console.log("HMACKey: ", new Uint8Array(await window.crypto.subtle.exportKey("raw", HMACKey)))
                     console.log(HMACKey)
                     let iters = 0
-                    let listenerId = ignoreId
                     getKeyFromIters = async (sharedKey, HMACKey, salt_xor, iters) => {
                         let keydf = await new_pbkdf(sharedKey, iters, salt_xor, HMACKey)
                         let encryptionKey = await derive_new_key(keydf, iters, salt_xor)

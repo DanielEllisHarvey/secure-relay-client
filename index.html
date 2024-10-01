@@ -151,15 +151,28 @@
         let ignoreId = 0
         let checksumSize = 16
         window.onload = async () => {
+            document.getElementById("download").addEventListener("click", async () => {
+                let anchor = document.getElementById("invisAnchor")
+                let keyObj = {
+                    derivKey: localStorage.derivKey,
+                    derivKeyPub: localStorage.derivKeyPub,
+                    derivIV: localStorage.derivIV
+                }
+                
+                anchor.download = await get_user_id(localStorage.derivKeyPub)
+                anchor.href = "data:application/json;,"+escape(JSON.stringify(keyObj))
+                document.getElementById("invisAnchor").click()
+            })
             document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
             document.getElementById("insertPubKey").addEventListener("click", async () => {
                 ignoreId++
                 document.getElementById("output").innerText = ""
+                document.getElementById("decryptOutput").innerText = ""
                 let passphrase = prompt("Password:")
                 let uwkdf = await window.crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), { name: "PBKDF2" }, false, ["deriveKey"])
                 let passwd = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: mksalt(10000, 9203, 8008135), iterations: 1000, hash: "SHA-256" }, uwkdf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
                 console.log(passwd)
-                if(localStorage.getItem("derivKey") == null){
+                if(localStorage.getItem("derivKey") == null) {
                     // let signingKey = await generate_signing_key()
                     let derivKey = await generate_derivation_key()
                     let exportedDerivKey = new Uint8Array(await window.crypto.subtle.exportKey("pkcs8", derivKey.privateKey))
@@ -383,6 +396,13 @@
         }
     </script>
     <button id="invisBtn" style="visibility: hidden; position: absolute;"></button>
+    <a id="invisAnchor" style="visibility: hidden; position: absolute;"></a>
+    <fieldset style="width: fit-content">
+        <legend>Advanced settings</legend>
+        <button id="generate">Generate</button>
+        <button id="upload">Upload</button>
+        <button id="download">Download</button>
+    </fieldset>
     <input type="text" style="width: 500px" id="outsidePublicKey" placeholder="Public key to use">
     <button id="insertPubKey">Use</button>
     <br>

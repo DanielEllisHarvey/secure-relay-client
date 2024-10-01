@@ -151,6 +151,23 @@
         let ignoreId = 0
         let checksumSize = 16
         window.onload = async () => {
+            document.getElementById("generate").addEventListener("click", async () => {
+                if(!confirm("Are you sure you want to generate a new keypair?\n\nThis will overwrite your current keypair.")) return
+                let passphrase = prompt("Password:")
+                let uwkdf = await window.crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), { name: "PBKDF2" }, false, ["deriveKey"])
+                let passwd = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: mksalt(10000, 9203, 8008135), iterations: 1000, hash: "SHA-256" }, uwkdf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
+                console.log(passwd)
+                // let signingKey = await generate_signing_key()
+                let derivKey = await generate_derivation_key()
+                let exportedDerivKey = new Uint8Array(await window.crypto.subtle.exportKey("pkcs8", derivKey.privateKey))
+                let iv = window.crypto.getRandomValues(new Uint8Array(16))
+                localStorage.setItem("derivIV", encode.bytes_to_b64(iv))
+                localStorage.setItem("derivKey", encode.arrayBuffer_to_b64(await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, passwd, exportedDerivKey)))
+                localStorage.setItem("derivKeyPub", encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("spki", derivKey.publicKey)))
+                // localStorage.setItem("signKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.wrapKey("pkcs8", signingKey.privateKey, passwd, { name: "AES-KW" }))))
+                // localStorage.setItem("signKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", signingKey.publicKey))))
+                document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
+            })
             document.getElementById("download").addEventListener("click", async () => {
                 let anchor = document.getElementById("invisAnchor")
                 let keyObj = {
@@ -414,23 +431,25 @@
     </script>
     <button id="invisBtn" style="visibility: hidden; position: absolute;"></button>
     <a id="invisAnchor" style="visibility: hidden; position: absolute;"></a>
-    <fieldset style="width: fit-content; display: flex">
-        <legend>Advanced settings</legend>
-        <div>
-        <pre style="padding-right: 28px">Generate key</pre>
-        <button id="generate">Generate</button>
-        </div>
-        <br>
-        <div>
-        <pre>Upload key</pre>
-        <input id="uploadPicker" type="file">
-        </div>
-        <br>
-        <div>
-        <pre>Download key</pre>
-        <button id="download">Download</button>
-        </div>
-    </fieldset>
+    <details>
+        <summary>Advanced options</summary>
+        <fieldset style="width: fit-content; display: flex">
+            <div>
+                <pre style="padding-right: 28px">Generate key</pre>
+                <button id="generate">Generate</button>
+            </div>
+            <br>
+            <div>
+                <pre>Upload key</pre>
+                <input id="uploadPicker" type="file">
+            </div>
+            <br>
+            <div>
+                <pre>Download key</pre>
+                <button id="download">Download</button>
+            </div>
+        </fieldset>
+    </details>
     <input type="text" style="width: 500px" id="outsidePublicKey" placeholder="Public key to use">
     <button id="insertPubKey">Use</button>
     <br>

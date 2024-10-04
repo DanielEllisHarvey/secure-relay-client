@@ -4,13 +4,10 @@
         const key2 = null
         /**
          * Generate keypair for shared key derivation
-         * @returns X25519 cryptoKey
+         * @returns {Promise<CryptoKeyPair<ECDH>>} Asymmetric ECDH P-384 derivation key [deriveBits, deriveKey] exportable
          */
         async function generate_derivation_key() {
-            // return await window.crypto.subtle.generateKey({name: "X15519"}, true, ["deriveKey", "deriveBits"]).catch(async () => {
-            //     localStorage.setItem("usingECDH", true)
             return await window.crypto.subtle.generateKey({name: "ECDH", namedCurve: "P-384"}, true, ["deriveKey", "deriveBits"])
-            // })
         }
         /**
          * Generate keypair for signature creation/verification
@@ -24,6 +21,13 @@
             // if(localStorage.usingECDH == "true") algoName = "ECDH"
             return await window.crypto.subtle.deriveKey({name: "ECDH", namedCurve: "P-384", public: publicKey}, privateKey, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
         }
+        /**
+         * Generate a salt based on modulating values, function based on Math.sin() method
+         * @param {Number} iters Number of iterations (More is better, slower, at least 10K recommended)
+         * @param {Number} shift A value to get the 32*nth Bytes of output (Any number is secure, can be incremented through, do not decrement)
+         * @param {Number} salt_xor A modulating value to create instance specific output (Should be shared with other party securely in some way)
+         * @returns {Uint8Array<32>} A salt of 32 Bytes in a Unsigned Byte array
+         */
         function mksalt(iters, shift, salt_xor) {
             let salt = new Uint8Array(32)
             for(let iter=0; iter<iters; iter++)
@@ -34,9 +38,20 @@
                 }
             return salt
         }
+        /**
+         * Generates a new key from a key derivation function
+         * @param {CryptoKey<PBKDF2>} keydf pbkdf2 derivation key
+         * @param {Number} nonce A one-time use value to generate a salt
+         * @param {Number} salt_xor The modulating value to use with the salt function
+         * @returns {Promise<CryptoKey<AES-GCM>>} Symmetric AES-GCM 256 bit encryption key [encrypt, decrypt] exportable
+         */
         async function derive_new_key(keydf, nonce, salt_xor) {
             return await window.crypto.subtle.deriveKey({name: "PBKDF2", salt: mksalt(100, nonce, salt_xor), hash: "SHA-256", iterations: 10000}, keydf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
         }
+        /** 
+         * Generate a new key derivation key based on pbkdf2
+         * @returns {Promise<CryptoKey<PBKDF2>>} [deriveBits, deriveKey] non-exportable
+         */
         async function new_pbkdf(sharedKey, nonce, salt_xor, HMACKey) {
             let keydata = new Uint8Array(await window.crypto.subtle.exportKey("raw", sharedKey))
             let salt = mksalt(10980, nonce, salt_xor)
@@ -46,10 +61,19 @@
             // console.log(newHBK, keydata)
             return await window.crypto.subtle.importKey("raw", newHBK, {name: "PBKDF2"}, false, ["deriveBits", "deriveKey"])
         }
+        /**
+         * Generate a user ID based on a public key
+         * @param {string} publicKey Base64 string
+         * @returns {Promise<string>} Base64 string user ID
+         */
         async function get_user_id(publicKey) {
             digest = new Uint8Array(await window.crypto.subtle.digest({ name: "SHA-256" }, encode.b64_to_bytes(publicKey))).slice(0,12)
             return encode.bytes_to_b64(digest)
         }
+        /**
+         * Sends public key to the server over WS and sets onlineUsers
+         * @returns {None}
+         */
         function register_key() {
             new WebSocket("ws://127.0.0.1:8000/register?key="+localStorage.derivKeyPub).onmessage = (e) => {
                 clientsOnline = JSON.parse(e.data)
@@ -57,6 +81,10 @@
                 document.getElementById("users").innerText = Object.keys(clientsOnline)
             }
         }
+        /**
+         * Gets online users and updates clientsOnline variable
+         * @returns {None}
+         */
         function get_online_users() {
             new WebSocket("ws://127.0.0.1:8000/register?n="+noUsers.toString()).onmessage = (e) => {
                 // if(JSON.parse(e.data)["n"] > noUsers)
@@ -65,6 +93,9 @@
                 document.getElementById("users").innerText = Object.keys(clientsOnline)
             }
         }
+        /**
+         * Set of encoding and decoding functions for handling bytes
+         */
         let encode = {
             int_to_uint8: function int_to_uint8(value) {
                 let bytes = new Uint8Array(4) // 32-bit short
@@ -143,11 +174,18 @@
                 return encode.uint8_to_int(bytes)
             }
         }
-
+        /**
+         * Global decryption function for message object JSON (DOM specific)
+         * @returns {Promise<Promise<string>>}
+         */
         async function globalDecryptFromJson(stringifiedMessageObject) {
             let messageObject = JSON.parse(stringifiedMessageObject)
             return await globalDecrypt(messageObject.data, messageObject.iv, messageObject.iters)
         }
+        /**
+         * Global decryption function (DOM specific)
+         * @returns {Promise<string>}
+         */
         async function globalDecrypt(cipherString, iv, iters) {
             let globalEncryptionKey = await getKeyFromIters(globalsharedKey, globalHMACKey, globalSalt_xor, encode.b64_to_int(iters))
             return new TextDecoder().decode(new Uint8Array(await window.crypto.subtle.decrypt(
@@ -157,6 +195,11 @@
             )).slice(checksumSize))
         }
         let clientsOnline = {}
+        /**
+         * A global function to generate the symmetric key based on current state
+         * sharedKey, HMACKey, salt_xor, iters
+         * @param sharedKey The initially generated shared key
+         */
         let getKeyFromIters = () => {}
         let globalsharedKey = null
         let globalMessageObject = null
@@ -168,30 +211,43 @@
         let checksumSize = 16
         let noUsers = 0
         window.onload = async () => {
+            // Give public key to server and display public key and user ID to user
             if(localStorage.getItem("derivKeyPub") != null) {
                 register_key()
                 document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
             }
+
+            // Get online users every 20s
             setInterval(() => { get_online_users() }, 20000)
+
+            // Button listeners
             document.getElementById("generate").addEventListener("click", async () => {
+                // Generate Key derivation key from password
                 if(!confirm("Are you sure you want to generate a new keypair?\n\nThis will overwrite your current keypair.")) return
                 let passphrase = prompt("Password:")
                 let uwkdf = await window.crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), { name: "PBKDF2" }, false, ["deriveKey"])
+                // Derive wrap/unwrap key
                 let passwd = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: mksalt(10000, 9203, 8008135), iterations: 1000, hash: "SHA-256" }, uwkdf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
-                console.log(passwd)
                 // let signingKey = await generate_signing_key()
+
+                // Generate ECDH derivation keypair and wrap
                 let derivKey = await generate_derivation_key()
                 let exportedDerivKey = new Uint8Array(await window.crypto.subtle.exportKey("pkcs8", derivKey.privateKey))
                 let iv = window.crypto.getRandomValues(new Uint8Array(16))
+
+                // Put wrapped keys in localStorage (Along with IV) in Base64
                 localStorage.setItem("derivIV", encode.bytes_to_b64(iv))
                 localStorage.setItem("derivKey", encode.arrayBuffer_to_b64(await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, passwd, exportedDerivKey)))
                 localStorage.setItem("derivKeyPub", encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("spki", derivKey.publicKey)))
                 // localStorage.setItem("signKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.wrapKey("pkcs8", signingKey.privateKey, passwd, { name: "AES-KW" }))))
                 // localStorage.setItem("signKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", signingKey.publicKey))))
+
+                // Display public key on screen and send key to server
                 document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
                 register_key()
             })
             document.getElementById("download").addEventListener("click", async () => {
+                // Get the invisible anchor element <a id="invisAnchor">
                 let anchor = document.getElementById("invisAnchor")
                 let keyObj = {
                     derivKey: localStorage.derivKey,
@@ -199,24 +255,25 @@
                     derivIV: localStorage.derivIV
                 }
                 
+                // Make download name and data URL, then click the invisible anchor element
                 anchor.download = await get_user_id(localStorage.derivKeyPub)
                 anchor.href = "data:application/json;,"+escape(JSON.stringify(keyObj))
                 document.getElementById("invisAnchor").click()
             })
             document.getElementById("uploadPicker").addEventListener("change", async (e) => {
                 if(!confirm("This will overwrite the current keypair")) return
+                // Read file in file picker, read as text
                 let file = e.target.files.item(0)
-                console.log(typeof file)
-                console.log(file)
                 let reader = new FileReader()
                 reader.readAsText(file)
                 reader.onload = async () => {
+                    // Add all Object elements to localStorage one at a time
                     let keyData = JSON.parse(reader.result)
-
-                    console.log(keyData)
                     Object.keys(keyData).forEach((element) => {
                         localStorage.setItem(element, keyData[element])
                     })
+
+                    // Display public key on screen and send key to server
                     document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
                     register_key()
                 }
@@ -226,10 +283,12 @@
                 ignoreId++
                 document.getElementById("output").innerText = ""
                 document.getElementById("decryptOutput").innerText = ""
+
+                // Generate Key derivation key from password
                 let passphrase = prompt("Password:")
                 let uwkdf = await window.crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), { name: "PBKDF2" }, false, ["deriveKey"])
+                // Derive wrap/unwrap key
                 let passwd = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: mksalt(10000, 9203, 8008135), iterations: 1000, hash: "SHA-256" }, uwkdf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
-                console.log(passwd)
                 if(localStorage.getItem("derivKey") == null) {
                     // let signingKey = await generate_signing_key()
                     let derivKey = await generate_derivation_key()
@@ -269,7 +328,8 @@
                 // else derivAlgoParams = { name: "X25519" }
                 let iv = encode.b64_to_bytes(localStorage.getItem("derivIV"))
                 arrBuff.set(new Uint8Array(await window.crypto.subtle.decrypt({name: "AES-GCM", iv}, passwd, encode.b64_to_bytes(localStorage.getItem("derivKey")))))
-                console.log(arrBuff)
+
+                // Import private ECDH derivation key
                 derivKey.privateKey = await window.crypto.subtle.importKey(
                     "pkcs8",
                     arrBuff, // new ArrayBuffer(hex_to_bytes(localStorage.getItem("signKey"))),
@@ -278,8 +338,8 @@
                     ["deriveKey", "deriveBits"],
                 )
                 arrBuff = new Uint8Array(new ArrayBuffer(120))
-                // if(localStorage["usingECDH"] == "true") { arrBuff = new Uint8Array(new ArrayBuffer(120)) }
                 arrBuff.set(encode.b64_to_bytes(localStorage.getItem("derivKeyPub")))
+                // Import public ECDH derivation key
                 derivKey.publicKey = await window.crypto.subtle.importKey(
                     "spki",
                     arrBuff,
@@ -287,7 +347,6 @@
                     true,
                     []
                 )
-                console.log(derivKey)
                 let ext_pubkey = null
                 let b64_ext_pubkey = null
                 let key2 = {}
@@ -308,6 +367,7 @@
                                 console.log(b64_ext_pubkey)
                             }
                             ext_pubkey = encode.b64_to_bytes(b64_ext_pubkey)
+                            // Import other user's public ECDH derivation key
                             key2.publicKey = await window.crypto.subtle.importKey(
                                 "spki",
                                 ext_pubkey,
@@ -315,29 +375,38 @@
                                 true,
                                 []
                             )
+                            // Create shared key
                             sharedKey = await derive_symmetric_key(derivKey.privateKey, key2.publicKey)
+
+                            /**
+                             * Challenge: This proves ownership of your private key to the server
+                             */
                             console.log("challenge")
                             console.log(data["p384key"])
+                            // Import server's public ECDH derivation key
                             let serverPubkey = await window.crypto.subtle.importKey("spki", encode.b64_to_bytes(data["p384key"]), { name: "ECDH", namedCurve: "P-384" }, false, [])
+                            // Generate a shared key with the server
                             let serverSharedKey = await window.crypto.subtle.exportKey("raw", await derive_symmetric_key(derivKey.privateKey, serverPubkey))
+                            // Use the shared key as a HMAC key
                             let HMACKey = await window.crypto.subtle.importKey("raw", serverSharedKey, { name: "HMAC", hash: "SHA-512" }, false, ["sign"])
+                            // Sign challenge bytes with HMAC key
                             let digest = await window.crypto.subtle.sign({ name: "HMAC", hash: "SHA-512" }, HMACKey, encode.b64_to_bytes(data["randomBytesChallenge"]).slice(0,64))
-                            console.log(encode.b64_to_bytes(data["randomBytesChallenge"]))
-                            // let digest = await window.crypto.subtle.digest({ name: "SHA-256" }, encode.b64_to_bytes(data["randomBytesChallenge"]).slice(0,64))
-                            console.log(encode.arrayBuffer_to_b64(digest))
+                            // Send signed challenge bytes back to server
                             ws.send(new Uint8Array(digest))
                             challengeComplete = true
+                            // Tell other party that you're online
                             ws.send('{"action":"hello","to":"'+await get_user_id(b64_ext_pubkey)+'"}')
                             document.getElementById("invisBtn").click()
                         }
-                        else if(data["type"] == "recipientNotFound") {
-                            // document.getElementById("decryptOutput").innerText = "Recipient is not online."
-                            console.log(messageQueue)
-                        }
+                        // else if(data["type"] == "recipientNotFound") {
+                        //     // document.getElementById("decryptOutput").innerText = "Recipient is not online."
+                        //     console.log(messageQueue)
+                        // }
                         else if(data["action"] == "msg") {
                             messageQueue[messageQueue.length] = typeof JSON.parse(e.data) == "string" ? JSON.parse(JSON.parse(e.data)) : JSON.parse(e.data)
                             decrypt(false, e.data)
                         }
+                        // When other party is online, give them all of the messages they missed
                         else if(data["action"] == "hello") {
                             messageQueue.forEach(async message => {
                                 message["to"] = await get_user_id(b64_ext_pubkey)
@@ -352,6 +421,7 @@
                 ws.onclose = (e) => {
                     ws = new WebSocket("ws://127.0.0.1:8000/ws?key="+localStorage.derivKeyPub)
                 }
+                // Allow global access to the WS instance
                 globalws = ws
                 document.getElementById("invisBtn").addEventListener("click", async () => {
                     console.log(encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("raw", sharedKey)))

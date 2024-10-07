@@ -10,15 +10,12 @@
             return await window.crypto.subtle.generateKey({name: "ECDH", namedCurve: "P-384"}, true, ["deriveKey", "deriveBits"])
         }
         /**
-         * Generate keypair for signature creation/verification
-         * @returns Ed25519 cryptoKey
+         * Derive shared key from user's private key and other user's public key
+         * @param {CryptoKey<ECDH>} privateKey
+         * @param {CryptoKey<ECDH>} publicKey
+         * @returns {Promise<CryptoKey<AES-GCM>>} Shared key
          */
-        // async function generate_signing_key() {
-        //     return await window.crypto.subtle.generateKey({name: "Ed25519"}, true, ["sign", "verify"])
-        // }
         async function derive_symmetric_key(privateKey, publicKey) {
-            // let algoName = "X25519"
-            // if(localStorage.usingECDH == "true") algoName = "ECDH"
             return await window.crypto.subtle.deriveKey({name: "ECDH", namedCurve: "P-384", public: publicKey}, privateKey, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
         }
         /**
@@ -197,8 +194,11 @@
         let clientsOnline = {}
         /**
          * A global function to generate the symmetric key based on current state
-         * sharedKey, HMACKey, salt_xor, iters
-         * @param sharedKey The initially generated shared key
+         * @param {CryptoKey<AES-GCM>} sharedKey The initially generated shared key 256 bit, [encrypt, decrypt] non-exportable
+         * @param {CryptoKey<HMAC>} HMACKey The HMAC key used to derive Key derivation function keys
+         * @param {Number} salt_xor The modulating value used for the salt
+         * @param {Number} iters The number of iterations used to encrypt
+         * @returns {Promise<CryptoKey<AES-GCM>>} Symmetric AES-GCM 256 bit encryption key [encrypt, decrypt] non-exportable
          */
         let getKeyFromIters = () => {}
         let globalsharedKey = null
@@ -302,47 +302,22 @@
                 }
                 let signingKey = {}
                 let arrBuff = new Uint8Array(new ArrayBuffer(185))
-                // arrBuff.set(b64_to_bytes(localStorage.getItem("signKey")))
-                // signingKey.privateKey = await window.crypto.subtle.unwrapKey(
-                //     "pkcs8",
-                //     arrBuff,
-                //     passwd,
-                //     { "name": "AES-KW" },
-                //     { "name": "Ed25519" },
-                //     true,
-                //     ["sign"],
-                // )
-                // arrBuff = new Uint8Array(new ArrayBuffer(44))
-                // arrBuff.set(b64_to_bytes(localStorage.getItem("signKeyPub")))
-                // signingKey.publicKey = await window.crypto.subtle.importKey(
-                //     "spki",
-                //     arrBuff,
-                //     { "name": "Ed25519" },
-                //     true,
-                //     ["verify"]
-                // )
                 let derivKey = {}
-                // arrBuff = new Uint8Array(new ArrayBuffer(56))
-                // let derivAlgoParams = 
-                // if(localStorage.getItem("usingECDH") == "true") { algoParams = { name: "ECDH", namedCurve: "P-384" }; arrBuff = new Uint8Array(new ArrayBuffer(185))}
-                // else derivAlgoParams = { name: "X25519" }
                 let iv = encode.b64_to_bytes(localStorage.getItem("derivIV"))
-                arrBuff.set(new Uint8Array(await window.crypto.subtle.decrypt({name: "AES-GCM", iv}, passwd, encode.b64_to_bytes(localStorage.getItem("derivKey")))))
+                let decryptedDerivKey = new Uint8Array(await window.crypto.subtle.decrypt({name: "AES-GCM", iv}, passwd, encode.b64_to_bytes(localStorage.getItem("derivKey"))))
 
                 // Import private ECDH derivation key
                 derivKey.privateKey = await window.crypto.subtle.importKey(
                     "pkcs8",
-                    arrBuff, // new ArrayBuffer(hex_to_bytes(localStorage.getItem("signKey"))),
+                    decryptedDerivKey, // new ArrayBuffer(hex_to_bytes(localStorage.getItem("signKey"))),
                     { name: "ECDH", namedCurve: "P-384" },
                     true,
                     ["deriveKey", "deriveBits"],
                 )
-                arrBuff = new Uint8Array(new ArrayBuffer(120))
-                arrBuff.set(encode.b64_to_bytes(localStorage.getItem("derivKeyPub")))
                 // Import public ECDH derivation key
                 derivKey.publicKey = await window.crypto.subtle.importKey(
                     "spki",
-                    arrBuff,
+                    encode.b64_to_bytes(localStorage.getItem("derivKeyPub")),
                     { name: "ECDH", namedCurve: "P-384" },
                     true,
                     []
@@ -425,10 +400,16 @@
                 globalws = ws
                 document.getElementById("invisBtn").addEventListener("click", async () => {
                     console.log(encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("raw", sharedKey)))
+                    // Global access to shared key
                     globalsharedKey = sharedKey
-                    let hashedSKey = await window.crypto.subtle.digest({ name: "SHA-512" }, await window.crypto.subtle.exportKey("raw", sharedKey))
-                    let xor_values = new Uint32Array(hashedSKey)
-                    const salt_xor = xor_values[xor_values[0] & 63] ^ xor_values[xor_values[1] & 63] ^ xor_values[xor_values[62] & 63] ^ xor_values[xor_values[63] & 63]
+
+                    // Generation of salt_xor
+                    let hashedSKey = new Uint32Array(await window.crypto.subtle.digest({ name: "SHA-512" }, await window.crypto.subtle.exportKey("raw", sharedKey)))
+                    // let xor_values = new Uint32Array(hashedSKey)
+                    hashedSKey.forEach((x, i, arr) => {arr[i] ^= arr[arr[(x+i) & 15] & 15]})
+                    const salt_xor = hashedSKey.reduce((p, x, i, arr) => {return arr[i] ^ p})
+                    console.log(salt_xor)
+                    // const salt_xor = xor_values[xor_values[0] & 63] ^ xor_values[xor_values[1] & 63] ^ xor_values[xor_values[62] & 63] ^ xor_values[xor_values[63] & 63]
                     globalSalt_xor = salt_xor
                     let keydf = await new_pbkdf(sharedKey, 0, salt_xor)
                     // let encryptionKey = await derive_new_key(keydf, 0, salt_xor)
@@ -490,6 +471,11 @@
                         iters++
                         // document.getElementById("output").innerText = btoa(new TextDecoder("utf-8").decode(cipherBytes))
                     })
+                    /**
+                     * Function to decrypt message objects (DOM specific)
+                     * @param {bool} textbox Whether the message object is in the decryption textbox
+                     * @param {Object} obj Message object to decrypt
+                     */
                     decrypt = async (textbox, obj) => {
                         let messageObject = null
                         if(textbox) {

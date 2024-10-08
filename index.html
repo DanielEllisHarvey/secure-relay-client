@@ -72,7 +72,7 @@
          * @returns {None}
          */
         function register_key() {
-            new WebSocket("ws://127.0.0.1:8000/register?key="+localStorage.derivKeyPub).onmessage = (e) => {
+            new WebSocket("ws://ws.aeaeae.pw:8080/register?key="+localStorage.derivKeyPub).onmessage = (e) => {
                 clientsOnline = JSON.parse(e.data)
                 noUsers = Object.keys(clientsOnline).length
                 document.getElementById("users").innerText = Object.keys(clientsOnline)
@@ -83,7 +83,7 @@
          * @returns {None}
          */
         function get_online_users() {
-            new WebSocket("ws://127.0.0.1:8000/register?n="+noUsers.toString()).onmessage = (e) => {
+            new WebSocket("ws://ws.aeaeae.pw:8080/register?n="+noUsers.toString()).onmessage = (e) => {
                 // if(JSON.parse(e.data)["n"] > noUsers)
                 noUsers = Object.keys(clientsOnline).length
                 clientsOnline = JSON.parse(e.data)
@@ -325,7 +325,7 @@
                 let messageQueue = []
                 let decrypt = () => {}
                 let listenerId = ignoreId
-                let ws = new WebSocket("ws://127.0.0.1:8000/ws?key="+localStorage.derivKeyPub)
+                let ws = new WebSocket("ws://ws.aeaeae.pw:8080/ws?key="+localStorage.derivKeyPub)
                 ws.onopen = async () => {
                     if(listenerId != ignoreId) return
                     challengeComplete = false
@@ -392,7 +392,7 @@
                 }
 
                 ws.onclose = (e) => {
-                    ws = new WebSocket("ws://127.0.0.1:8000/ws?key="+localStorage.derivKeyPub)
+                    ws = new WebSocket("ws://ws.aeaeae.pw:8080/ws?key="+localStorage.derivKeyPub)
                 }
                 // Allow global access to the WS instance
                 globalws = ws

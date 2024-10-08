@@ -382,13 +382,14 @@
                             decrypt(false, e.data)
                         }
                         // When other party is online, give them all of the messages they missed
-                        else if(data["action"] == "hello") {
-                            messageQueue.forEach(async message => {
-                                message["to"] = await get_user_id(b64_ext_pubkey)
-                                ws.send(JSON.stringify(message))
-                            });
-                            document.getElementById("output").innerText = ""
-                        }
+                        else if(data["action"] == "hello") 
+                            setTimeout(() => {
+                                messageQueue.forEach(async message => {
+                                    message["to"] = await get_user_id(b64_ext_pubkey)
+                                    ws.send(JSON.stringify(message))
+                                });
+                                document.getElementById("output").innerText = ""
+                            }, 500) // This timeout is because of Chrome, which causes many issues.. *cough* curve25519
                         else { console.log(data) }
                     }
                 }

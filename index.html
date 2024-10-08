@@ -228,7 +228,6 @@
                 let uwkdf = await window.crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), { name: "PBKDF2" }, false, ["deriveKey"])
                 // Derive wrap/unwrap key
                 let passwd = await window.crypto.subtle.deriveKey({ name: "PBKDF2", salt: mksalt(10000, 9203, 8008135), iterations: 1000, hash: "SHA-256" }, uwkdf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
-                // let signingKey = await generate_signing_key()
 
                 // Generate ECDH derivation keypair and wrap
                 let derivKey = await generate_derivation_key()
@@ -239,8 +238,6 @@
                 localStorage.setItem("derivIV", encode.bytes_to_b64(iv))
                 localStorage.setItem("derivKey", encode.arrayBuffer_to_b64(await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, passwd, exportedDerivKey)))
                 localStorage.setItem("derivKeyPub", encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("spki", derivKey.publicKey)))
-                // localStorage.setItem("signKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.wrapKey("pkcs8", signingKey.privateKey, passwd, { name: "AES-KW" }))))
-                // localStorage.setItem("signKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", signingKey.publicKey))))
 
                 // Display public key on screen and send key to server
                 document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
@@ -297,8 +294,6 @@
                     localStorage.setItem("derivIV", encode.bytes_to_b64(iv))
                     localStorage.setItem("derivKey", encode.arrayBuffer_to_b64(await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, passwd, exportedDerivKey)))
                     localStorage.setItem("derivKeyPub", encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("spki", derivKey.publicKey)))
-                    // localStorage.setItem("signKey", bytes_to_b64(new Uint8Array(await window.crypto.subtle.wrapKey("pkcs8", signingKey.privateKey, passwd, { name: "AES-KW" }))))
-                    // localStorage.setItem("signKeyPub", bytes_to_b64(new Uint8Array(await window.crypto.subtle.exportKey("spki", signingKey.publicKey))))
                 }
                 let signingKey = {}
                 let arrBuff = new Uint8Array(new ArrayBuffer(185))
@@ -309,7 +304,7 @@
                 // Import private ECDH derivation key
                 derivKey.privateKey = await window.crypto.subtle.importKey(
                     "pkcs8",
-                    decryptedDerivKey, // new ArrayBuffer(hex_to_bytes(localStorage.getItem("signKey"))),
+                    decryptedDerivKey,
                     { name: "ECDH", namedCurve: "P-384" },
                     true,
                     ["deriveKey", "deriveBits"],
@@ -408,10 +403,8 @@
 
                     // Generation of salt_xor
                     let hashedSKey = new Uint32Array(await window.crypto.subtle.digest({ name: "SHA-512" }, await window.crypto.subtle.exportKey("raw", sharedKey)))
-                    // let xor_values = new Uint32Array(hashedSKey)
                     const salt_xor = hashedSKey.reduce((p, x, i, arr) => {return arr[i] ^ p})
                     console.log(salt_xor)
-                    // const salt_xor = xor_values[xor_values[0] & 63] ^ xor_values[xor_values[1] & 63] ^ xor_values[xor_values[62] & 63] ^ xor_values[xor_values[63] & 63]
                     globalSalt_xor = salt_xor
                     let keydf = await new_pbkdf(sharedKey, 0, salt_xor)
                     // let encryptionKey = await derive_new_key(keydf, 0, salt_xor)
@@ -433,7 +426,6 @@
                         if(listenerId != ignoreId) return
                         if(document.getElementById("inputBox").value == "") { console.log("Empty string"); return }
                         //! iv must be random
-                        // let iv = await window.crypto.subtle.deriveBits({name: "PBKDF2", salt: mksalt(10, iters+(oldkdf[0]^oldkdf[2])), hash: "SHA-512", iterations: 1000}, keydf, 128)
                         let iters_gen = window.crypto.getRandomValues(new Uint32Array(4))
                         let iters = (iters_gen[0] ^ iters_gen[1] ^ iters_gen[3] ^ iters_gen[4])
                         let iv = await window.crypto.getRandomValues(new Uint8Array(16))
@@ -442,22 +434,16 @@
                         globaliv = iv
                         let stringToEncrypt = document.getElementById("inputBox").value
                         let encodedString = new TextEncoder().encode(stringToEncrypt)
-                        // let checksum = new Uint8Array(await window.crypto.subtle.digest("SHA-512", encodedString)).slice(0,8)
                         let checksum = new Uint8Array(await window.crypto.subtle.sign({ name: "HMAC", hash: "SHA-512" }, HMACKey, encodedString)).slice(0,checksumSize)
                         let msgLength = encodedString.byteLength + checksum.byteLength
                         let message = new Uint8Array(msgLength)
                         message.set(checksum, 0)
                         message.set(encodedString, checksum.byteLength)
                         let cipherBytes = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, encryptionKey, message)
-                        // let signature = new Uint8Array(await window.crypto.subtle.sign({name: "Ed25519"}, signingKey.privateKey, cipherBytes))
-                        // console.log(signature)
-                        // let verification = await window.crypto.subtle.verify({name: "Ed25519"}, signingKey.publicKey, signature, cipherBytes)
-                        // console.log(verification)
                         let messageObject = {
                             "action": "msg",
                             "data": encode.arrayBuffer_to_b64(cipherBytes),
                             "iv": encode.bytes_to_b64(iv),
-                            // "signature": bytes_to_b64(signature),
                             "iters": encode.int_to_b64(iters),
                             "to": await get_user_id(b64_ext_pubkey),
                             "from": await get_user_id(localStorage.derivKeyPub)
@@ -470,7 +456,6 @@
                         // document.getElementById("output").innerText += JSON.stringify(messageObject)+"\n"
                         document.getElementById("inputBox").value = ""
                         iters++
-                        // document.getElementById("output").innerText = btoa(new TextDecoder("utf-8").decode(cipherBytes))
                     })
                     /**
                      * Function to decrypt message objects (DOM specific)

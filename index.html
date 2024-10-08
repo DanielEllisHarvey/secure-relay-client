@@ -43,7 +43,7 @@
          * @returns {Promise<CryptoKey<AES-GCM>>} Symmetric AES-GCM 256 bit encryption key [encrypt, decrypt] exportable
          */
         async function derive_new_key(keydf, nonce, salt_xor) {
-            return await window.crypto.subtle.deriveKey({name: "PBKDF2", salt: mksalt(100, nonce, salt_xor), hash: "SHA-256", iterations: 10000}, keydf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
+            return await window.crypto.subtle.deriveKey({name: "PBKDF2", salt: mksalt(20000, nonce, salt_xor), hash: "SHA-256", iterations: 10000}, keydf, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"])
         }
         /** 
          * Generate a new key derivation key based on pbkdf2
@@ -51,7 +51,7 @@
          */
         async function new_pbkdf(sharedKey, nonce, salt_xor, HMACKey) {
             let keydata = new Uint8Array(await window.crypto.subtle.exportKey("raw", sharedKey))
-            let salt = mksalt(10980, nonce, salt_xor)
+            let salt = mksalt(20980, nonce, salt_xor)
             for(let i=0; i<32; i++) keydata[i] = salt[i]
             let newHBK = keydata
             if(typeof HMACKey != "undefined") newHBK = new Uint8Array(await window.crypto.subtle.sign({name: "HMAC"}, HMACKey, keydata))
@@ -407,16 +407,15 @@
                     // Generation of salt_xor
                     let hashedSKey = new Uint32Array(await window.crypto.subtle.digest({ name: "SHA-512" }, await window.crypto.subtle.exportKey("raw", sharedKey)))
                     // let xor_values = new Uint32Array(hashedSKey)
-                    hashedSKey.forEach((x, i, arr) => {arr[i] ^= arr[arr[(x+i) & 15] & 15]})
                     const salt_xor = hashedSKey.reduce((p, x, i, arr) => {return arr[i] ^ p})
                     console.log(salt_xor)
                     // const salt_xor = xor_values[xor_values[0] & 63] ^ xor_values[xor_values[1] & 63] ^ xor_values[xor_values[62] & 63] ^ xor_values[xor_values[63] & 63]
                     globalSalt_xor = salt_xor
                     let keydf = await new_pbkdf(sharedKey, 0, salt_xor)
                     // let encryptionKey = await derive_new_key(keydf, 0, salt_xor)
-                    let salt_xor_xor = mksalt(9000, salt_xor+91, salt_xor)
+                    let salt_xor_xor = mksalt(19000, salt_xor+91, salt_xor)
                     let keyData = new Uint8Array(256)
-                    for(let i=0; i<512; i++) keyData[i&255] ^= mksalt(50+(salt_xor&0xff), 0x6837-i, salt_xor^salt_xor_xor[i%32])[i&15] & 0xff
+                    for(let i=0; i<512; i++) keyData[i&255] ^= mksalt(90+(salt_xor&0xff), 0x6837-i, salt_xor^salt_xor_xor[i%32])[i&15] & 0xff
                     let HMACKey = await window.crypto.subtle.importKey("raw", keyData, {name: "HMAC", hash: "SHA-512"}, true, ["sign"])
                     globalHMACKey = HMACKey
                     // console.log("HMACKey: ", new Uint8Array(await window.crypto.subtle.exportKey("raw", HMACKey)))

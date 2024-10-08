@@ -325,7 +325,7 @@
                 let messageQueue = []
                 let decrypt = () => {}
                 let listenerId = ignoreId
-                let ws = new WebSocket("ws://ws.aeaeae.pw:8080/ws?key="+localStorage.derivKeyPub)
+                let ws = new WebSocket("ws://ws.aeaeae.pw:8080/ws?id="+await get_user_id(localStorage.derivKeyPub))
                 ws.onopen = async () => {
                     if(listenerId != ignoreId) return
                     challengeComplete = false

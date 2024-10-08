@@ -79,11 +79,12 @@ async def register_key(websocket: WebSocket, key: str | None = None, n: int | in
     await websocket.close()
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, key: str):
+async def websocket_endpoint(websocket: WebSocket, id: str):
     await websocket.accept()
     # print(manager.active_connections)
     # await manager.alias(await websocket.receive_text(), websocket)
-    parsed_key = key.replace(" ", "+")
+    parsed_key = id.replace(" ", "+")
+    parsed_key = manager.clients_online[parsed_key]
     bytes_key = base64.b64decode(parsed_key)
     manager.add_key(bytes_key)
     peer_public_key = serialization.load_der_public_key(bytes_key)

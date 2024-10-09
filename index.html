@@ -397,6 +397,7 @@
                 // Allow global access to the WS instance
                 globalws = ws
                 document.getElementById("invisBtn").addEventListener("click", async () => {
+                    if(listenerId != ignoreId) return
                     console.log(encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("raw", sharedKey)))
                     // Global access to shared key
                     globalsharedKey = sharedKey

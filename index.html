@@ -3,7 +3,8 @@
         // Set hostname, default hostname for debug and testing
         // Auto set hostname when found in localStorage
         let hostname = "18.135.30.235:8080"
-        if(localStorage.getItem("hostname") !== "null") hostname = localStorage.getItem("hostname")
+        if(localStorage.getItem("hostname") != null) hostname = localStorage.getItem("hostname")
+        else { setTimeout(() => document.getElementById("decryptOutput").innerText = "No hostname set. (Advanced options > Hostname)", 10) }
 
         const key1 = null
         const key2 = null
@@ -220,17 +221,29 @@
             if(localStorage.getItem("derivKeyPub") != null) {
                 register_key()
                 document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
+            } else {
+                document.getElementById("keys").innerText = "No keys generated. (Advanced options > Generate key > Generate)"
             }
 
             // Get online users every 20s
             setInterval(() => { get_online_users() }, 60000)
 
             // Button listeners
+            function setHostname(new_hostname) {
+                hostname = new_hostname
+                localStorage.setItem("hostname", new_hostname)
+                document.getElementById("hostname").style.backgroundColor = "#8f7"
+            }
+            document.getElementById("hostnameBtn").onclick = () => {
+                if(document.getElementById("hostname").value != "") {
+                    setHostname(document.getElementById("hostname").value)
+                    document.getElementById("decryptOutput").innerText = ""
+                }
+            }
             document.getElementById("hostname").onkeypress = (e) => {
                 if((e.key === "Enter") && (document.getElementById("hostname").value != "")) {
-                    hostname = document.getElementById("hostname").value
-                    localStorage.setItem("hostname", hostname)
-                    document.getElementById("hostname").style.backgroundColor = "#8f7"
+                    setHostname(document.getElementById("hostname").value)
+                    document.getElementById("decryptOutput").innerText = ""
                 }
             }
             document.getElementById("generate").addEventListener("click", async () => {
@@ -530,7 +543,7 @@
             <br>
             <div style="margin-left: 32px;">
                 <pre>Hostname</pre>
-                <input id="hostname">
+                <input id="hostname"><button display="default" id="hostnameBtn">Set</button>
             </div>
         </fieldset>
     </details>

@@ -2,7 +2,7 @@
     <script>
         // Set hostname, default hostname for debug and testing
         // Auto set hostname when found in localStorage
-        let hostname = "18.135.30.235:8080"
+        let hostname = "danielharvey.uk:8080"
         if(localStorage.getItem("hostname") != null) hostname = localStorage.getItem("hostname")
         else { setTimeout(() => document.getElementById("decryptOutput").innerText = "No hostname set. (Advanced options > Hostname)", 10) }
 
@@ -81,7 +81,10 @@
             new WebSocket("ws://"+hostname+"/register?key="+localStorage.derivKeyPub).onmessage = (e) => {
                 clientsOnline = JSON.parse(e.data)
                 noUsers = Object.keys(clientsOnline).length
-                document.getElementById("users").innerText = Object.keys(clientsOnline)
+                document.getElementById("users").innerHTML = ""
+                Object.keys(clientsOnline).forEach(element => {
+                    document.getElementById("users").innerHTML += "<a href=\"#user="+element+"\" onclick=document.getElementById(\"outsidePublicKey\").value=\""+element+"\">"+element+"</a> "
+                });
             }
         }
         /**

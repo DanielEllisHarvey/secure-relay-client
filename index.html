@@ -280,7 +280,8 @@
                 localStorage.setItem("derivKeyPub", encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("spki", derivKey.publicKey)))
 
                 // Display public key on screen and send key to server
-                document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
+myId = await get_user_id(localStorage.derivKeyPub)
+                document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + myId
                 register_key()
             })
             document.getElementById("download").addEventListener("click", async () => {
@@ -311,7 +312,8 @@
                     })
 
                     // Display public key on screen and send key to server
-                    document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
+                    myId = await get_user_id(localStorage.derivKeyPub)
+                    document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + myId
                     register_key()
                 }
             })
@@ -357,9 +359,7 @@
                     true,
                     []
                 )
-                let ext_pubkey = null
-                let b64_ext_pubkey = null
-                let key2 = {}
+                let myId = await get_user_id(localStorage.derivKeyPub)
                 let sharedKey = null
                 let challengeComplete = false
                 let messageQueue = []

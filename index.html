@@ -280,7 +280,7 @@
                 localStorage.setItem("derivKeyPub", encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("spki", derivKey.publicKey)))
 
                 // Display public key on screen and send key to server
-myId = await get_user_id(localStorage.derivKeyPub)
+                myId = await get_user_id(localStorage.derivKeyPub)
                 document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + myId
                 register_key()
             })
@@ -360,12 +360,16 @@ myId = await get_user_id(localStorage.derivKeyPub)
                     []
                 )
                 let myId = await get_user_id(localStorage.derivKeyPub)
+                let b64Recipkey = null
+                let b64RecipId = null
+                let RecipKey = {}
                 let sharedKey = null
                 let challengeComplete = false
                 let messageQueue = []
                 let decrypt = () => {}
                 let listenerId = ignoreId
-                let ws = new WebSocket("ws://"+hostname+"/ws?id="+await get_user_id(localStorage.derivKeyPub))
+                let ws = new WebSocket("ws://"+hostname+"/ws?id="+myId)
+                let currentRecipientId = null
                 ws.onopen = async () => {
                     if(listenerId != ignoreId) return
                     challengeComplete = false
@@ -373,22 +377,21 @@ myId = await get_user_id(localStorage.derivKeyPub)
                         let data = JSON.parse(e.data)
                         console.log(data)
                         if(data["type"] == "challenge") {
-                            b64_ext_pubkey = document.getElementById("outsidePublicKey").value
-                            if(b64_ext_pubkey.length == 16) {
-                                b64_ext_pubkey = clientsOnline[b64_ext_pubkey]
-                                console.log(b64_ext_pubkey)
+                            b64RecipId = document.getElementById("outsidePublicKey").value
+                            if(b64RecipId.length == 16) {
+                                b64Recipkey = clientsOnline[b64RecipId]
+                                console.log(b64Recipkey)
                             }
-                            ext_pubkey = encode.b64_to_bytes(b64_ext_pubkey)
                             // Import other user's public ECDH derivation key
-                            key2.publicKey = await window.crypto.subtle.importKey(
+                            RecipKey.publicKey = await window.crypto.subtle.importKey(
                                 "spki",
-                                ext_pubkey,
+                                encode.b64_to_bytes(b64Recipkey),
                                 { name: "ECDH", namedCurve: "P-384" },
                                 true,
                                 []
                             )
                             // Create shared key
-                            sharedKey = await derive_symmetric_key(derivKey.privateKey, key2.publicKey)
+                            sharedKey = await derive_symmetric_key(derivKey.privateKey, RecipKey.publicKey)
 
                             /**
                              * Challenge: This proves ownership of your private key to the server
@@ -407,7 +410,8 @@ myId = await get_user_id(localStorage.derivKeyPub)
                             ws.send(new Uint8Array(digest))
                             challengeComplete = true
                             // Tell other party that you're online
-                            ws.send('{"action":"hello","to":"'+await get_user_id(b64_ext_pubkey)+'"}')
+                            ws.send('{"action":"hello","to":"'+b64RecipId+'","from":"'+myId+'"}')
+                            currentRecipientId = b64RecipId
                             document.getElementById("invisBtn").click()
                         }
                         // else if(data["type"] == "recipientNotFound") {
@@ -416,17 +420,29 @@ myId = await get_user_id(localStorage.derivKeyPub)
                         // }
                         else if(data["action"] == "msg") {
                             messageQueue[messageQueue.length] = typeof JSON.parse(e.data) == "string" ? JSON.parse(JSON.parse(e.data)) : JSON.parse(e.data)
-                            decrypt(false, e.data)
+                            console.log(messageQueue)
+                            let messageData = JSON.parse(e.data)
+                            if((messageData["from"] != b64RecipId) && (messageData["from"] != myId)) {
+                                document.getElementById(messageData["from"]).innerText = messageData["from"] + " (!)"
+                            }
+                            else {
+                                decrypt(false, e.data)
+                                document.getElementById(currentRecipientId).innerText = currentRecipientId + " <@>"
+                            }
                         }
                         // When other party is online, give them all of the messages they missed
-                        else if(data["action"] == "hello") 
-                            setTimeout(() => {
-                                messageQueue.forEach(async message => {
-                                    message["to"] = await get_user_id(b64_ext_pubkey)
-                                    ws.send(JSON.stringify(message))
-                                });
-                                document.getElementById("output").innerText = ""
-                            }, 500) // This timeout is because of Chrome, which causes many issues.. *cough* curve25519
+                        else if(data["action"] == "hello") {
+                            if (data["from"] == currentRecipientId)
+                                setTimeout(() => {
+                                    messageQueue.forEach(async message => {
+                                        message["to"] = currentRecipientId
+                                        ws.send(JSON.stringify(message))
+                                    });
+                                    document.getElementById("output").innerText = ""
+                                    document.getElementById(data["from"]).innerText = data["from"] + " <@>"
+                                }, 250) // This timeout is because of Chrome, which causes many issues.. *cough* curve25519
+                            else document.getElementById(data["from"]).innerText = data["from"] + " (!)"
+                        }
                         else { console.log(data) }
                     }
                 }
@@ -437,6 +453,7 @@ myId = await get_user_id(localStorage.derivKeyPub)
                 // Allow global access to the WS instance
                 globalws = ws
                 document.getElementById("invisBtn").addEventListener("click", async () => {
+                    document.getElementById("actionOutput").innerText = "Calculating shared keys..."
                     if(listenerId != ignoreId) return
                     console.log(encode.arrayBuffer_to_b64(await window.crypto.subtle.exportKey("raw", sharedKey)))
                     // Global access to shared key
@@ -462,6 +479,8 @@ myId = await get_user_id(localStorage.derivKeyPub)
                         let encryptionKey = await derive_new_key(keydf, iters, salt_xor)
                         return encryptionKey
                     }
+                    document.getElementById("actionOutput").innerText = "Decrypting messages..."
+                    setTimeout(() => {document.getElementById("actionOutput").innerText = ""}, 2000)
                     document.getElementById("keys").innerText = localStorage.derivKeyPub + "\n" + await get_user_id(localStorage.derivKeyPub)
                     document.getElementById("submit").addEventListener("click", async () => {
                         if(listenerId != ignoreId) return
@@ -486,7 +505,7 @@ myId = await get_user_id(localStorage.derivKeyPub)
                             "data": encode.arrayBuffer_to_b64(cipherBytes),
                             "iv": encode.bytes_to_b64(iv),
                             "iters": encode.int_to_b64(iters),
-                            "to": await get_user_id(b64_ext_pubkey),
+                            "to": await get_user_id(b64Recipkey),
                             "from": await get_user_id(localStorage.derivKeyPub)
                         }
                         globalMessageObject = messageObject
@@ -527,6 +546,7 @@ myId = await get_user_id(localStorage.derivKeyPub)
                             HMACKey,
                             decryptedBytes.slice(checksumSize)
                         )).slice(0,checksumSize)
+                        document.getElementById("actionOutput").innerText = ""
                         if(messageObject["from"] == await get_user_id(localStorage.derivKeyPub)) messageObject["from"] = "You"
                         if(checksum.values == decryptedBytes.slice(0,checksumSize).values)
                             document.getElementById("decryptOutput").innerText += messageObject["from"] +": " + new TextDecoder().decode(decryptedBytes.slice(checksumSize)) + "\n"
@@ -608,6 +628,7 @@ myId = await get_user_id(localStorage.derivKeyPub)
     <br>
     <textarea id="decryptBox" placeholder="Encrypted message as stringified JSON" hidden="true"></textarea>
     <button id="decrypt" hidden="true">Decrypt</button>
+    <pre id="actionOutput"></pre>
     <pre id="decryptOutput"></pre>
     <pre id="output"></pre>
     <pre id="keys"></pre>

@@ -78,10 +78,11 @@
          * Displays the online users above the user box
          * @param {Array} list of users
          */
-        function display_users_online(users) {
+        async function display_users_online(users) {
             document.getElementById("users").innerHTML = ""
+            let myId = await get_user_id(localStorage.derivKeyPub)
             Object.keys(clientsOnline).forEach(element => {
-                document.getElementById("users").innerHTML += "<a href=\"#user="+element+"\" id=\""+element+"\" onclick=document.getElementById(\"outsidePublicKey\").value=\""+element+"\">"+element+"</a> "
+                if(element != myId) document.getElementById("users").innerHTML += "<a href=\"#user="+element+"\" id=\""+element+"\" onclick=document.getElementById(\"outsidePublicKey\").value=\""+element+"\">"+element+"</a> "
             });
         }
         /**
